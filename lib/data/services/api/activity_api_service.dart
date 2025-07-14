@@ -1,0 +1,622 @@
+import 'package:flutter/material.dart';
+import '../../../data/models/dynamic_form/form_field_model.dart';
+import 'base_api_service.dart';
+import 'api_client.dart';
+
+/// Activity API service for handling activity-related operations
+class ActivityApiService extends BaseApiService {
+  /// Load activity form structure for add/edit operations
+  Future<DynamicFormModel> loadActivityForm({int? activityId}) async {
+    try {
+      debugPrint('[ACTIVITY_API] Loading form for activity ID: $activityId');
+
+      final response = await getFormWithData(
+        controller: 'AktiviteAdd',
+        url: '/Dyn/AktiviteAdd/Detail',
+        id: activityId ?? 0,
+      );
+
+      debugPrint('[ACTIVITY_API] Form response received');
+
+      final formModel = DynamicFormModel.fromJson(response);
+      debugPrint('[ACTIVITY_API] Form parsed: ${formModel.formName}');
+      debugPrint('[ACTIVITY_API] Sections count: ${formModel.sections.length}');
+
+      for (final section in formModel.sections) {
+        debugPrint('[ACTIVITY_API] Section: ${section.label} (${section.fields.length} fields)');
+      }
+
+      return formModel;
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Load form error: $e');
+      rethrow;
+    }
+  }
+
+  /// Load activity list data - Açık aktiviteler
+  Future<Map<String, dynamic>> loadOpenActivities({
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    try {
+      debugPrint('[ACTIVITY_API] Loading open activities - Page: $page, Size: $pageSize');
+
+      final response = await getFormListData(
+        controller: 'AktiviteAdd',
+        params: 'AcikAktiviteler',
+        formPath: '/Dyn/AktiviteAdd/List/AcikAktiviteler',
+        page: page,
+        pageSize: pageSize,
+      );
+
+      debugPrint('[ACTIVITY_API] Open activities loaded');
+      return response;
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Load open activities error: $e');
+      rethrow;
+    }
+  }
+
+  /// Load all activities list
+  Future<Map<String, dynamic>> loadAllActivities({
+    int page = 1,
+    int pageSize = 50,
+  }) async {
+    try {
+      debugPrint('[ACTIVITY_API] Loading all activities - Page: $page, Size: $pageSize');
+
+      final response = await getFormListData(
+        controller: 'AktiviteAdd',
+        params: 'List',
+        formPath: '/Dyn/AktiviteAdd/List',
+        page: page,
+        pageSize: pageSize,
+      );
+
+      debugPrint('[ACTIVITY_API] All activities loaded');
+      return response;
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Load all activities error: $e');
+      rethrow;
+    }
+  }
+
+  /// Save activity form data
+  Future<Map<String, dynamic>> saveActivity({
+    required Map<String, dynamic> formData,
+    int? activityId,
+  }) async {
+    try {
+      debugPrint('[ACTIVITY_API] Saving activity - ID: $activityId');
+      debugPrint('[ACTIVITY_API] Form data keys: ${formData.keys.toList()}');
+
+      final response = await saveFormData(
+        controller: 'AktiviteAdd',
+        formData: formData,
+        id: activityId,
+      );
+
+      debugPrint('[ACTIVITY_API] Activity saved successfully');
+      return response;
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Save error: $e');
+      rethrow;
+    }
+  }
+
+  /// Universal dropdown loader - tries different endpoints based on sourceType and sourceValue
+  Future<List<DropdownOption>> loadDropdownOptions({
+    required String sourceType,
+    required dynamic sourceValue,
+    String? dataTextField,
+    String? dataValueField,
+    Map<String, dynamic>? filters,
+  }) async {
+    try {
+      debugPrint('[ACTIVITY_API] Loading dropdown options - Source: $sourceType/$sourceValue');
+
+      if (sourceType == '4') {
+        // Group source - try multiple API endpoints with specific handling
+
+        // 🎯 SPECIAL HANDLING for Priority (sourceValue: 63)
+        if (sourceValue == 63) {
+          debugPrint('[ACTIVITY_API] 🎯 Special Priority handling for sourceValue: 63');
+
+          // Try multiple different approaches for Priority
+          final priorityBodies = [
+            // Web'deki exact payload
+            {
+              "filter": {"logic": "and", "filters": []},
+              "filters": [],
+              "logic": "and",
+              "model": {
+                "Parameters": [],
+                "model": {"Text": "", "Value": ""},
+                "culture": "tr",
+                "form_PATH": "/Dyn/AktiviteAdd/Detail",
+                "apiUrl": null,
+                "controller": "AktiviteAdd",
+                "revisionNo": null,
+                "dataId": null,
+                "type": "DropDownList",
+                "valueName": "DropDownList"
+              }
+            },
+            // Simplified version
+            {
+              "Parameters": [],
+              "model": {"Text": "", "Value": ""},
+              "culture": "tr",
+              "form_PATH": "/Dyn/AktiviteAdd/Detail",
+              "type": "DropDownList",
+              "controller": "AktiviteAdd",
+              "valueName": "DropDownList"
+            },
+            // Even simpler
+            {"groupId": 63, "culture": "tr"}
+          ];
+
+          for (int i = 0; i < priorityBodies.length; i++) {
+            try {
+              debugPrint('[ACTIVITY_API] Trying Priority POST GetCategory attempt ${i + 1}...');
+              final response = await ApiClient.post(
+                '/api/admin/DynamicFormApi/GetCategory/63',
+                body: priorityBodies[i],
+              );
+
+              if (response.statusCode == 200) {
+                final data = jsonDecode(response.body);
+                final dataList = data['Data'] as List? ?? [];
+
+                if (dataList.isNotEmpty) {
+                  debugPrint('[ACTIVITY_API] ✅ Priority POST GetCategory success attempt ${i + 1}: ${dataList.length} items');
+                  return dataList
+                      .map((item) => DropdownOption(
+                            value: item['Value'],
+                            text: item['Text'] as String,
+                          ))
+                      .toList();
+                }
+              }
+              debugPrint('[ACTIVITY_API] Priority attempt ${i + 1} status: ${response.statusCode}');
+            } catch (e) {
+              debugPrint('[ACTIVITY_API] Priority attempt ${i + 1} failed: $e');
+            }
+          }
+        }
+
+        // 🎯 SPECIAL HANDLING for Activity Type (sourceValue: 10176)
+        if (sourceValue == 10176) {
+          debugPrint('[ACTIVITY_API] 🎯 Special Activity Type handling for sourceValue: 10176');
+
+          // Try multiple different approaches for Activity Type
+          final activityBodies = [
+            // Web'deki exact payload
+            {
+              "filter": {"logic": "and", "filters": []},
+              "filters": [],
+              "logic": "and",
+              "model": {
+                "Parameters": [],
+                "model": {"Text": "", "Value": ""},
+                "culture": "tr",
+                "form_PATH": "/Dyn/AktiviteAdd/Detail",
+                "apiUrl": null,
+                "controller": "AktiviteAdd",
+                "revisionNo": null,
+                "dataId": null,
+                "type": "DropDownList",
+                "valueName": "DropDownList"
+              }
+            },
+            // Simplified version
+            {
+              "Parameters": [],
+              "model": {"Text": "", "Value": ""},
+              "culture": "tr",
+              "form_PATH": "/Dyn/AktiviteAdd/Detail",
+              "type": "DropDownList",
+              "controller": "AktiviteAdd",
+              "valueName": "DropDownList"
+            },
+            // Even simpler
+            {"groupId": 10176, "culture": "tr"}
+          ];
+
+          for (int i = 0; i < activityBodies.length; i++) {
+            try {
+              debugPrint('[ACTIVITY_API] Trying ActivityType POST GetCategory attempt ${i + 1}...');
+              final response = await ApiClient.post(
+                '/api/admin/DynamicFormApi/GetCategory/10176',
+                body: activityBodies[i],
+              );
+
+              if (response.statusCode == 200) {
+                final data = jsonDecode(response.body);
+                final dataList = data['Data'] as List? ?? [];
+
+                if (dataList.isNotEmpty) {
+                  debugPrint('[ACTIVITY_API] ✅ ActivityType POST GetCategory success attempt ${i + 1}: ${dataList.length} items');
+                  return dataList
+                      .map((item) => DropdownOption(
+                            value: item['Value'],
+                            text: item['Text'] as String,
+                          ))
+                      .toList();
+                }
+              }
+              debugPrint('[ACTIVITY_API] ActivityType attempt ${i + 1} status: ${response.statusCode}');
+            } catch (e) {
+              debugPrint('[ACTIVITY_API] ActivityType attempt ${i + 1} failed: $e');
+            }
+          }
+        }
+
+        // 1. Try GetCategory endpoint first (GET method)
+        try {
+          debugPrint('[ACTIVITY_API] Trying GetCategory endpoint...');
+          final response = await ApiClient.get(
+            '/api/admin/DynamicFormApi/GetCategory/$sourceValue',
+          );
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final dataList = data['Data'] as List? ?? [];
+
+            debugPrint('[ACTIVITY_API] ✅ GetCategory success: ${dataList.length} items');
+            return dataList
+                .map((item) => DropdownOption(
+                      value: item['Value'],
+                      text: item['Text'] as String,
+                    ))
+                .toList();
+          }
+        } catch (e) {
+          debugPrint('[ACTIVITY_API] GetCategory failed: $e');
+        }
+
+        // 2. Try GetGroupItems endpoint (POST method)
+        try {
+          debugPrint('[ACTIVITY_API] Trying GetGroupItems endpoint...');
+          final response = await ApiClient.post(
+            '/api/admin/DynamicFormApi/GetGroupItems',
+            body: {
+              "groupId": sourceValue,
+              "model": {"Text": "", "Value": "", "ParentId": sourceValue.toString()},
+              "logic": "and",
+              "filters": []
+            },
+          );
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final dataList = data['Data'] as List? ?? [];
+
+            debugPrint('[ACTIVITY_API] ✅ GetGroupItems success: ${dataList.length} items');
+            return dataList
+                .map((item) => DropdownOption(
+                      value: item['Value'],
+                      text: item['Text'] as String,
+                    ))
+                .toList();
+          }
+        } catch (e) {
+          debugPrint('[ACTIVITY_API] GetGroupItems failed: $e');
+        }
+
+        // 3. Try GetReadReport endpoint (fallback)
+        try {
+          debugPrint('[ACTIVITY_API] Trying GetReadReport endpoint...');
+          final response = await ApiClient.post(
+            '/api/admin/DynamicFormApi/GetReadReport/$sourceValue',
+            body: {
+              "model": {
+                "Parameters": [],
+                "model": {"Text": "", "Value": ""},
+                "culture": "tr",
+                "form_PATH": "/Dyn/AktiviteAdd/Detail",
+                "type": "DropDownList",
+                "apiUrl": null,
+                "controller": "AktiviteAdd",
+                "revisionNo": null,
+                "dataId": null,
+                "valueName": "DropDownList"
+              },
+              "take": 0,
+              "skip": 0,
+              "page": 1,
+              "pageSize": 0
+            },
+          );
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final dataList = data['Data'] as List? ?? [];
+
+            debugPrint('[ACTIVITY_API] ✅ GetReadReport success: ${dataList.length} items');
+            return dataList
+                .map((item) {
+                  final value = item['Value'] ?? item['Id'];
+                  final text = item['Text'] as String? ?? item['Name'] as String? ?? item['Adi'] as String? ?? value?.toString() ?? '';
+
+                  return DropdownOption(value: value, text: text);
+                })
+                .where((item) => item.text.isNotEmpty)
+                .toList();
+          }
+        } catch (e) {
+          debugPrint('[ACTIVITY_API] GetReadReport failed: $e');
+        }
+
+        // 4. Try generic DropDown endpoint
+        try {
+          debugPrint('[ACTIVITY_API] Trying generic DropDown endpoint...');
+          final response = await ApiClient.post(
+            '/api/admin/DynamicFormApi/DropDown',
+            body: {
+              "sourceType": sourceType,
+              "sourceValue": sourceValue,
+              "dataTextField": dataTextField ?? "Text",
+              "dataValueField": dataValueField ?? "Value",
+              "controller": "AktiviteAdd",
+              "culture": "tr"
+            },
+          );
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final dataList = data['Data'] as List? ?? data as List? ?? [];
+
+            debugPrint('[ACTIVITY_API] ✅ DropDown endpoint success: ${dataList.length} items');
+            return dataList
+                .map((item) => DropdownOption(
+                      value: item['Value'] ?? item['Id'],
+                      text: item['Text'] as String? ?? item['Name'] as String? ?? '',
+                    ))
+                .where((item) => item.text.isNotEmpty)
+                .toList();
+          }
+        } catch (e) {
+          debugPrint('[ACTIVITY_API] DropDown endpoint failed: $e');
+        }
+      } else if (sourceType == '1') {
+        // SQL source - use GetReadReport
+        try {
+          debugPrint('[ACTIVITY_API] SQL source - using GetReadReport...');
+          final response = await ApiClient.post(
+            '/api/admin/DynamicFormApi/GetReadReport/$sourceValue',
+            body: {
+              "model": {
+                "Parameters": [],
+                "model": {dataTextField ?? "Text": "", dataValueField ?? "Id": ""},
+                "culture": "tr",
+                "form_PATH": "/Dyn/AktiviteAdd/Detail",
+                "type": "DropDownList",
+                "apiUrl": null,
+                "controller": "AktiviteAdd",
+                "revisionNo": null,
+                "dataId": null,
+                "valueName": "DropDownList"
+              },
+              "take": 0,
+              "skip": 0,
+              "page": 1,
+              "pageSize": 0
+            },
+          );
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final dataList = data['Data'] as List? ?? [];
+
+            debugPrint('[ACTIVITY_API] ✅ SQL GetReadReport success: ${dataList.length} items');
+            return dataList
+                .map((item) {
+                  final value = item[dataValueField ?? 'Id'] ?? item['Value'] ?? item['Id'];
+                  final text = item[dataTextField ?? 'Text'] as String? ??
+                      item['Text'] as String? ??
+                      item['Name'] as String? ??
+                      item['Adi'] as String? ??
+                      item['Firma'] as String? ??
+                      value?.toString() ??
+                      '';
+
+                  return DropdownOption(value: value, text: text);
+                })
+                .where((item) => item.text.isNotEmpty)
+                .toList();
+          }
+        } catch (e) {
+          debugPrint('[ACTIVITY_API] SQL GetReadReport failed: $e');
+        }
+      }
+
+      debugPrint('[ACTIVITY_API] ⚠️ All endpoints failed, returning empty list');
+      return [];
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Load dropdown error: $e');
+      return [];
+    }
+  }
+
+  /// Load activity types (sourceValue: 10176)
+  Future<List<DropdownOption>> loadActivityTypes() async {
+    return await loadDropdownOptions(
+      sourceType: '4',
+      sourceValue: 10176,
+      dataTextField: 'Text',
+      dataValueField: 'Value',
+    );
+  }
+
+  /// Load priority levels (sourceValue: 63)
+  Future<List<DropdownOption>> loadPriorityLevels() async {
+    return await loadDropdownOptions(
+      sourceType: '4',
+      sourceValue: 63,
+      dataTextField: 'Text',
+      dataValueField: 'Value',
+    );
+  }
+
+  /// Load companies for company dropdown
+  Future<List<DropdownOption>> loadCompanies() async {
+    return await loadDropdownOptions(
+      sourceType: '1',
+      sourceValue: 3072,
+      dataTextField: 'Firma',
+      dataValueField: 'Id',
+    );
+  }
+
+  /// Load users for representative dropdown (sourceValue: 22)
+  Future<List<DropdownOption>> loadUsers() async {
+    return await loadDropdownOptions(
+      sourceType: '1',
+      sourceValue: 22,
+      dataTextField: 'Adi',
+      dataValueField: 'UserId',
+    );
+  }
+
+  /// Load contacts by company ID (cascade dropdown)
+  Future<List<DropdownOption>> loadContactsByCompany(int companyId) async {
+    try {
+      debugPrint('[ACTIVITY_API] Loading contacts for company: $companyId');
+
+      // Use GetReadReport endpoint with sourceValue: 23
+      final response = await ApiClient.post(
+        '/api/admin/DynamicFormApi/GetReadReport/23',
+        body: {
+          "model": {
+            "Parameters": [
+              {"Name": "@CompanyId", "Type": 2, "Value": companyId},
+              {"Name": "CompanyId", "Type": 2, "Value": companyId}
+            ],
+            "model": {"Adi": "", "Id": ""},
+            "culture": "tr",
+            "form_PATH": "/Dyn/AktiviteAdd/Detail",
+            "type": "DropDownList",
+            "apiUrl": null,
+            "controller": "AktiviteAdd",
+            "revisionNo": null,
+            "dataId": null,
+            "valueName": "DropDownList"
+          },
+          "take": 0,
+          "skip": 0,
+          "page": 1,
+          "pageSize": 0
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final dataList = data['Data'] as List? ?? [];
+
+        debugPrint('[ACTIVITY_API] ✅ Contacts loaded: ${dataList.length} items');
+        return dataList
+            .map((item) => DropdownOption(
+                  value: item['Id'],
+                  text: item['Adi'] as String? ?? '',
+                ))
+            .toList();
+      }
+
+      debugPrint('[ACTIVITY_API] ⚠️ Contacts API failed');
+      return [];
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Load contacts error: $e');
+      return [];
+    }
+  }
+
+  /// Parse activity list data for display
+  List<ActivityListItem> parseActivityList(Map<String, dynamic> response) {
+    try {
+      final dataResult = response['DataSourceResult'] as Map<String, dynamic>? ?? {};
+      final dataList = dataResult['Data'] as List? ?? [];
+
+      return dataList.whereType<Map<String, dynamic>>().map((item) => ActivityListItem.fromJson(item)).toList();
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Parse list error: $e');
+      return [];
+    }
+  }
+
+  /// Get total count from list response
+  int getTotalCount(Map<String, dynamic> response) {
+    try {
+      final dataResult = response['DataSourceResult'] as Map<String, dynamic>? ?? {};
+      return dataResult['Total'] as int? ?? 0;
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Get total count error: $e');
+      return 0;
+    }
+  }
+}
+
+/// Activity list item model
+class ActivityListItem {
+  final int id;
+  final String? type;
+  final String? subject;
+  final String? company;
+  final String? contact;
+  final String? startDate;
+  final String? representative;
+  final String? details;
+
+  ActivityListItem({
+    required this.id,
+    this.type,
+    this.subject,
+    this.company,
+    this.contact,
+    this.startDate,
+    this.representative,
+    this.details,
+  });
+
+  factory ActivityListItem.fromJson(Map<String, dynamic> json) {
+    return ActivityListItem(
+      id: json['Id'] as int? ?? 0,
+      type: json['Tipi'] as String?,
+      subject: json['Konu'] as String?,
+      company: json['Firma'] as String?,
+      contact: json['Kisi'] as String?,
+      startDate: json['Baslangic'] as String?,
+      representative: json['Temsilci'] as String?,
+      details: json['Detay'] as String?,
+    );
+  }
+
+  String get displayTitle {
+    if (subject != null && subject!.isNotEmpty) {
+      return subject!;
+    }
+    if (type != null && type!.isNotEmpty) {
+      return type!;
+    }
+    return 'Aktivite #$id';
+  }
+
+  String get displaySubtitle {
+    final parts = <String>[];
+    if (company != null && company!.isNotEmpty) {
+      parts.add(company!);
+    }
+    if (contact != null && contact!.isNotEmpty) {
+      parts.add(contact!);
+    }
+    return parts.join(' - ');
+  }
+
+  String get displayDate {
+    return startDate ?? '-';
+  }
+
+  String get displayRepresentative {
+    return representative ?? 'Atanmamış';
+  }
+}
