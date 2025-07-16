@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
+import '../../models/activity/activity_list_model.dart';
 import 'base_api_service.dart';
 import 'api_client.dart';
 
@@ -122,9 +123,7 @@ class ActivityApiService extends BaseApiService {
         if (sourceValue == 63) {
           debugPrint('[ACTIVITY_API] 🎯 Special Priority handling for sourceValue: 63');
 
-          // Try multiple different approaches for Priority
           final priorityBodies = [
-            // Web'deki exact payload
             {
               "filter": {"logic": "and", "filters": []},
               "filters": [],
@@ -142,7 +141,6 @@ class ActivityApiService extends BaseApiService {
                 "valueName": "DropDownList"
               }
             },
-            // Simplified version
             {
               "Parameters": [],
               "model": {"Text": "", "Value": ""},
@@ -152,7 +150,6 @@ class ActivityApiService extends BaseApiService {
               "controller": "AktiviteAdd",
               "valueName": "DropDownList"
             },
-            // Even simpler
             {"groupId": 63, "culture": "tr"}
           ];
 
@@ -189,9 +186,7 @@ class ActivityApiService extends BaseApiService {
         if (sourceValue == 10176) {
           debugPrint('[ACTIVITY_API] 🎯 Special Activity Type handling for sourceValue: 10176');
 
-          // Try multiple different approaches for Activity Type
           final activityBodies = [
-            // Web'deki exact payload
             {
               "filter": {"logic": "and", "filters": []},
               "filters": [],
@@ -209,7 +204,6 @@ class ActivityApiService extends BaseApiService {
                 "valueName": "DropDownList"
               }
             },
-            // Simplified version
             {
               "Parameters": [],
               "model": {"Text": "", "Value": ""},
@@ -219,7 +213,6 @@ class ActivityApiService extends BaseApiService {
               "controller": "AktiviteAdd",
               "valueName": "DropDownList"
             },
-            // Even simpler
             {"groupId": 10176, "culture": "tr"}
           ];
 
@@ -484,7 +477,6 @@ class ActivityApiService extends BaseApiService {
     try {
       debugPrint('[ACTIVITY_API] Loading contacts for company: $companyId');
 
-      // Use GetReadReport endpoint with sourceValue: 23
       final response = await ApiClient.post(
         '/api/admin/DynamicFormApi/GetReadReport/23',
         body: {
@@ -531,92 +523,66 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  /// Parse activity list data for display
-  List<ActivityListItem> parseActivityList(Map<String, dynamic> response) {
+  /// Aktivite listesini getirir (YENİ METHOD)
+  Future<ActivityListResponse> getActivityList({
+    required ActivityFilter filter,
+    int page = 1,
+    int pageSize = 20,
+    String? searchQuery,
+  }) async {
     try {
-      final dataResult = response['DataSourceResult'] as Map<String, dynamic>? ?? {};
-      final dataList = dataResult['Data'] as List? ?? [];
+      debugPrint('[ACTIVITY_API] Getting activity list - Filter: $filter, Page: $page, Size: $pageSize, Search: $searchQuery');
 
-      return dataList.whereType<Map<String, dynamic>>().map((item) => ActivityListItem.fromJson(item)).toList();
-    } catch (e) {
-      debugPrint('[ACTIVITY_API] Parse list error: $e');
-      return [];
-    }
-  }
+      // Determine the endpoint based on filter
+      String params;
+      switch (filter) {
+        case ActivityFilter.open:
+          params = "AcikAktiviteler";
+          break;
+        case ActivityFilter.closed:
+          params = "KapaliAktiviteler";
+          break;
+        case ActivityFilter.all:
+        default:
+          params = "AcikAktiviteler"; // Default to open
+          break;
+      }
 
-  /// Get total count from list response
-  int getTotalCount(Map<String, dynamic> response) {
-    try {
-      final dataResult = response['DataSourceResult'] as Map<String, dynamic>? ?? {};
-      return dataResult['Total'] as int? ?? 0;
+      final requestBody = {
+        "controller": "AktiviteAdd",
+        "params": params,
+        "form_PATH": "/Dyn/AktiviteAdd/List/$params",
+        "UserLocation": "0,0",
+        "LayoutData": {"element": "ListGrid", "url": "/Dyn/AktiviteAdd/List/$params"},
+        "take": pageSize,
+        "skip": (page - 1) * pageSize,
+        "page": page,
+        "pageSize": pageSize,
+      };
+
+      // Add search filter if provided
+      if (searchQuery != null && searchQuery.isNotEmpty) {
+        requestBody["searchQuery"] = searchQuery;
+      }
+
+      final response = await ApiClient.post(
+        '/api/admin/DynamicFormApi/GetFormListDataType',
+        body: requestBody,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        debugPrint('[ACTIVITY_API] Activity list response received');
+        return ActivityListResponse.fromJson(data);
+      } else {
+        throw Exception('Failed to load activity list: ${response.statusCode}');
+      }
     } catch (e) {
-      debugPrint('[ACTIVITY_API] Get total count error: $e');
-      return 0;
+      debugPrint('[ACTIVITY_API] Get activity list error: $e');
+      throw Exception('Aktivite listesi yüklenemedi: ${e.toString()}');
     }
   }
 }
 
-/// Activity list item model
-class ActivityListItem {
-  final int id;
-  final String? type;
-  final String? subject;
-  final String? company;
-  final String? contact;
-  final String? startDate;
-  final String? representative;
-  final String? details;
-
-  ActivityListItem({
-    required this.id,
-    this.type,
-    this.subject,
-    this.company,
-    this.contact,
-    this.startDate,
-    this.representative,
-    this.details,
-  });
-
-  factory ActivityListItem.fromJson(Map<String, dynamic> json) {
-    return ActivityListItem(
-      id: json['Id'] as int? ?? 0,
-      type: json['Tipi'] as String?,
-      subject: json['Konu'] as String?,
-      company: json['Firma'] as String?,
-      contact: json['Kisi'] as String?,
-      startDate: json['Baslangic'] as String?,
-      representative: json['Temsilci'] as String?,
-      details: json['Detay'] as String?,
-    );
-  }
-
-  String get displayTitle {
-    if (subject != null && subject!.isNotEmpty) {
-      return subject!;
-    }
-    if (type != null && type!.isNotEmpty) {
-      return type!;
-    }
-    return 'Aktivite #$id';
-  }
-
-  String get displaySubtitle {
-    final parts = <String>[];
-    if (company != null && company!.isNotEmpty) {
-      parts.add(company!);
-    }
-    if (contact != null && contact!.isNotEmpty) {
-      parts.add(contact!);
-    }
-    return parts.join(' - ');
-  }
-
-  String get displayDate {
-    return startDate ?? '-';
-  }
-
-  String get displayRepresentative {
-    return representative ?? 'Atanmamış';
-  }
-}
+// ActivityFilter enum - dosyanın sonunda
+enum ActivityFilter { open, closed, all }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
+import '../../models/company/company_list_model.dart';
 import 'base_api_service.dart';
 import 'api_client.dart';
 
@@ -87,7 +88,7 @@ class CompanyApiService extends BaseApiService {
     String? dataTextField,
     String? dataValueField,
     Map<String, dynamic>? filters,
-    int? companyId, // 🔥 Company ID eklendi
+    int? companyId,
   }) async {
     try {
       debugPrint('[COMPANY_API] Loading dropdown options - Source: $sourceType/$sourceValue, CompanyId: $companyId');
@@ -111,7 +112,7 @@ class CompanyApiService extends BaseApiService {
                     "model": {"Text": "", "Value": ""},
                     "culture": "tr",
                     "form_PATH": "/Dyn/CompanyAdd/Detail",
-                    "type": "MultiSelectBox", // 🔥 MultiSelectBox tipi
+                    "type": "MultiSelectBox",
                     "apiUrl": null,
                     "controller": "CompanyAdd",
                     "revisionNo": null,
@@ -299,24 +300,23 @@ class CompanyApiService extends BaseApiService {
         if (sourceValue == 22) {
           debugPrint('[COMPANY_API] 🎯 Special Users handling for sourceValue: 22 (Temsilci)');
 
-          // Web'deki exact payload'ı kullan
           final requestBody = {
             "model": {
               "Parameters": [],
               "model": {"Adi": "", "UserId": ""},
               "culture": "tr",
-              "form_PATH": "/Dyn/CompanyAdd/Detail", // 🔥 CompanyId olmadan
+              "form_PATH": "/Dyn/CompanyAdd/Detail",
               "type": "DropDownList",
               "apiUrl": null,
               "controller": "CompanyAdd",
               "revisionNo": null,
-              "dataId": null, // 🔥 null olarak gönder
+              "dataId": null,
               "valueName": "DropDownList"
             },
-            "take": 50, // 🔥 Web'deki gibi
+            "take": 50,
             "skip": 0,
             "page": 1,
-            "pageSize": 50, // 🔥 Web'deki gibi
+            "pageSize": 50,
             "filter": {"logic": "and", "filters": []}
           };
 
@@ -352,9 +352,7 @@ class CompanyApiService extends BaseApiService {
           final requestBody = {
             "model": {
               "Parameters": [],
-              "model": sourceValue == 22
-                  ? {"Adi": "", "UserId": ""} // User dropdown
-                  : {"Text": "", "Value": ""}, // Standard dropdown
+              "model": sourceValue == 22 ? {"Adi": "", "UserId": ""} : {"Text": "", "Value": ""},
               "culture": "tr",
               "form_PATH": "/Dyn/CompanyAdd/Detail",
               "type": "DropDownList",
@@ -364,7 +362,7 @@ class CompanyApiService extends BaseApiService {
               "dataId": null,
               "valueName": "DropDownList"
             },
-            "take": sourceValue == 22 ? 50 : 0, // Users have pagination
+            "take": sourceValue == 22 ? 50 : 0,
             "skip": 0,
             "page": 1,
             "pageSize": sourceValue == 22 ? 50 : 0,
@@ -419,80 +417,46 @@ class CompanyApiService extends BaseApiService {
     );
   }
 
-  /// Parse company list data for display
-  List<CompanyListItem> parseCompanyList(Map<String, dynamic> response) {
+  /// Firma listesini getirir (YENİ METHOD)
+  Future<CompanyListResponse> getCompanyList({
+    int page = 1,
+    int pageSize = 20,
+    String? searchQuery,
+  }) async {
     try {
-      final dataResult = response['DataSourceResult'] as Map<String, dynamic>? ?? {};
-      final dataList = dataResult['Data'] as List? ?? [];
+      debugPrint('[COMPANY_API] Getting company list - Page: $page, Size: $pageSize, Search: $searchQuery');
 
-      return dataList.whereType<Map<String, dynamic>>().map((item) => CompanyListItem.fromJson(item)).toList();
-    } catch (e) {
-      debugPrint('[COMPANY_API] Parse list error: $e');
-      return [];
-    }
-  }
+      final requestBody = {
+        "controller": "CompanyAdd",
+        "form_PATH": "/Dyn/CompanyAdd/List",
+        "UserLocation": "0,0",
+        "LayoutData": {"element": "ListGrid", "url": "/Dyn/CompanyAdd/List"},
+        "take": pageSize,
+        "skip": (page - 1) * pageSize,
+        "page": page,
+        "pageSize": pageSize,
+      };
 
-  /// Get total count from list response
-  int getTotalCount(Map<String, dynamic> response) {
-    try {
-      final dataResult = response['DataSourceResult'] as Map<String, dynamic>? ?? {};
-      return dataResult['Total'] as int? ?? 0;
-    } catch (e) {
-      debugPrint('[COMPANY_API] Get total count error: $e');
-      return 0;
-    }
-  }
-}
+      // Add search filter if provided
+      if (searchQuery != null && searchQuery.isNotEmpty) {
+        requestBody["searchQuery"] = searchQuery;
+      }
 
-/// Company list item model
-class CompanyListItem {
-  final int id;
-  final String name;
-  final String phone;
-  final String webAddress;
-  final String email;
-  final DateTime? registrationDate;
-  final String sector;
-  final String representative;
+      final response = await ApiClient.post(
+        '/api/admin/DynamicFormApi/GetFormListDataType',
+        body: requestBody,
+      );
 
-  CompanyListItem({
-    required this.id,
-    required this.name,
-    required this.phone,
-    required this.webAddress,
-    required this.email,
-    this.registrationDate,
-    required this.sector,
-    required this.representative,
-  });
-
-  factory CompanyListItem.fromJson(Map<String, dynamic> json) {
-    return CompanyListItem(
-      id: json['Id'] as int? ?? 0,
-      name: json['Firma'] as String? ?? '',
-      phone: json['Telefon'] as String? ?? '-',
-      webAddress: json['WebAdres'] as String? ?? '-',
-      email: json['Mail'] as String? ?? '-',
-      registrationDate: _parseDate(json['KayitTarihi']),
-      sector: json['Sektor'] as String? ?? '-',
-      representative: json['Temsilci'] as String? ?? '',
-    );
-  }
-
-  static DateTime? _parseDate(dynamic dateValue) {
-    if (dateValue == null) return null;
-    try {
-      if (dateValue is String) {
-        return DateTime.parse(dateValue);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        debugPrint('[COMPANY_API] Company list response received');
+        return CompanyListResponse.fromJson(data);
+      } else {
+        throw Exception('Failed to load company list: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('[CompanyListItem] Date parse error: $e');
+      debugPrint('[COMPANY_API] Get company list error: $e');
+      throw Exception('Firma listesi yüklenemedi: ${e.toString()}');
     }
-    return null;
-  }
-
-  String get formattedRegistrationDate {
-    if (registrationDate == null) return '-';
-    return '${registrationDate!.day.toString().padLeft(2, '0')}.${registrationDate!.month.toString().padLeft(2, '0')}.${registrationDate!.year}';
   }
 }

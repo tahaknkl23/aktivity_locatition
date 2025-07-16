@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../../core/constants/app_colors.dart';
 import '../home/home_screen.dart';
+import '../activity/activity_list_screen.dart';
+import '../company/company_list_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -13,8 +16,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   final List<Widget> _pages = [
     const HomeScreen(),
-    const PlaceholderScreen(title: 'Aktiviteler'),
-    const PlaceholderScreen(title: 'Firmalar'),
+    const ActivityListScreen(),
+    const CompanyListScreen(),
     const PlaceholderScreen(title: 'Profil'),
   ];
 
@@ -62,8 +65,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         onTap: (index) {
           setState(() => _currentIndex = index);
         },
-        selectedItemColor: Theme.of(context).primaryColor,
-        unselectedItemColor: Colors.grey,
+        selectedItemColor: AppColors.primary,
+        unselectedItemColor: AppColors.textTertiary,
+        backgroundColor: AppColors.surface,
+        elevation: 8,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home),
@@ -99,9 +104,12 @@ class PlaceholderScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(title),
         centerTitle: true,
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
       ),
       body: Center(
         child: Column(
@@ -110,22 +118,24 @@ class PlaceholderScreen extends StatelessWidget {
             Icon(
               Icons.construction,
               size: 80,
-              color: Colors.grey[400],
+              color: AppColors.textTertiary,
             ),
             const SizedBox(height: 16),
             Text(
               '$title Ekranı',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: TextStyle(
+                fontSize: 24,
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               'Bu ekran yakında gelecek',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Colors.grey[500],
-                  ),
+              style: TextStyle(
+                fontSize: 16,
+                color: AppColors.textSecondary,
+              ),
             ),
           ],
         ),

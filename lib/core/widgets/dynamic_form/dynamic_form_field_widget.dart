@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/helpers/validators.dart';
+import '../../../core/widgets/real_map_location_picker.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
 
 /// Dynamic form field widget that renders different field types
@@ -377,37 +378,134 @@ class _DynamicFormFieldWidgetState extends State<DynamicFormFieldWidget> {
   }
 
   Widget _buildMapField(AppSizes size) {
+    // Mevcut konum verisi varsa parse et
+    MapLocationData? currentLocation;
+    if (_currentValue != null && _currentValue.toString().isNotEmpty) {
+      try {
+        final parts = _currentValue.toString().split(',');
+        if (parts.length == 2) {
+          final lat = double.parse(parts[0].trim());
+          final lng = double.parse(parts[1].trim());
+          currentLocation = MapLocationData(
+            latitude: lat,
+            longitude: lng,
+            address: 'Seçilen konum',
+            coordinates: _currentValue.toString(),
+          );
+        }
+      } catch (e) {
+        debugPrint('[DynamicFormField] Invalid location format: $_currentValue');
+      }
+    }
+
     return InkWell(
       onTap: widget.field.isEnabled ? () => _openMapSelector(context) : null,
       child: Container(
-        height: 120,
+        height: 140, // 120'den 140'a çıkardık
         decoration: BoxDecoration(
           color: AppColors.inputBackground,
           borderRadius: BorderRadius.circular(size.formFieldBorderRadius),
           border: Border.all(color: AppColors.border),
         ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+        child: currentLocation != null ? _buildSelectedLocationDisplay(currentLocation, size) : _buildEmptyLocationDisplay(size),
+      ),
+    );
+  }
+
+  Widget _buildSelectedLocationDisplay(MapLocationData location, AppSizes size) {
+    return Padding(
+      padding: EdgeInsets.all(size.cardPadding),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min, // Bu satırı ekledik
+        children: [
+          Row(
             children: [
               Icon(
-                Icons.map,
-                size: 32,
-                color: widget.field.isEnabled ? AppColors.primary : AppColors.textTertiary,
+                Icons.location_on,
+                color: AppColors.primary,
+                size: size.mediumIcon,
               ),
-              SizedBox(height: size.smallSpacing),
-              Text(
-                _currentValue != null ? 'Konum seçildi' : 'Konum seçiniz',
-                style: TextStyle(
-                  fontSize: size.textSize,
-                  color: _currentValue != null ? AppColors.textPrimary : AppColors.textSecondary,
+              SizedBox(width: size.smallSpacing),
+              Expanded(
+                child: Text(
+                  'Konum Seçildi',
+                  style: TextStyle(
+                    fontSize: size.textSize,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
                 ),
+              ),
+              IconButton(
+                onPressed: widget.field.isEnabled ? () => _clearLocation() : null,
+                icon: Icon(
+                  Icons.clear,
+                  size: 20,
+                  color: AppColors.error,
+                ),
+                constraints: const BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 32,
+                ),
+                padding: EdgeInsets.zero,
               ),
             ],
           ),
-        ),
+          SizedBox(height: size.tinySpacing),
+          Flexible(
+            // Text'i Flexible ile sardık
+            child: Text(
+              location.address,
+              style: TextStyle(
+                fontSize: size.smallText,
+                color: AppColors.textPrimary,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          SizedBox(height: size.tinySpacing),
+          Text(
+            location.coordinates,
+            style: TextStyle(
+              fontSize: size.smallText * 0.9,
+              color: AppColors.textSecondary,
+              fontFamily: 'monospace',
+            ),
+            maxLines: 1, // Tek satır
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _buildEmptyLocationDisplay(AppSizes size) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.map,
+            size: 32,
+            color: widget.field.isEnabled ? AppColors.primary : AppColors.textTertiary,
+          ),
+          SizedBox(height: size.smallSpacing),
+          Text(
+            widget.field.isEnabled ? 'Konum seçiniz' : 'Konum seçimi devre dışı',
+            style: TextStyle(
+              fontSize: size.textSize,
+              color: widget.field.isEnabled ? AppColors.textSecondary : AppColors.textTertiary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _clearLocation() {
+    _onValueChanged(null);
   }
 
   Widget _buildEmptyField(AppSizes size) {
@@ -696,14 +794,68 @@ class _DynamicFormFieldWidgetState extends State<DynamicFormFieldWidget> {
   }
 
   Future<void> _openMapSelector(BuildContext context) async {
-    // Implement map selector
-    // This is a placeholder for now
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Harita seçimi özelliği yakında gelecek'),
-        backgroundColor: AppColors.info,
-      ),
-    );
+    try {
+      // Map selector dialog'unu aç
+      final result = await showDialog<MapLocationData>(
+        context: context,
+        builder: (context) => RealMapLocationPicker(
+          title: widget.field.label,
+          initialCoordinates: _currentValue?.toString(),
+        ),
+      );
+
+      // Sonucu işle
+      if (result != null) {
+        // Koordinatları string olarak kaydet (web formatına uygun)
+        _onValueChanged(result.coordinates);
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Konum seçildi: ${result.address}',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[DynamicFormField] Map selector error: $e');
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Konum seçiminde hata: ${e.toString()}',
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 }
 
