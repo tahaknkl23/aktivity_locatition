@@ -3,6 +3,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/helpers/snackbar_helper.dart';
 import '../../../core/widgets/dynamic_form/dynamic_form_widget.dart';
+import '../../../core/services/location_service.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
 import '../../../data/services/api/activity_api_service.dart';
 
@@ -28,6 +29,8 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   String? _errorMessage;
+  bool _isGettingLocation = false;
+  String? _currentLocationText;
 
   @override
   void initState() {
@@ -157,6 +160,102 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
   }
 
+  // Mevcut konumu al ve kıyasla
+  Future<void> _getCurrentLocation() async {
+    if (_isGettingLocation) return;
+
+    setState(() {
+      _isGettingLocation = true;
+    });
+
+    try {
+      debugPrint('[ADD_ACTIVITY] Getting current location...');
+
+      // Mevcut konumu al
+      final locationData = await LocationService.instance.getCurrentLocation();
+
+      if (locationData != null && mounted) {
+        setState(() {
+          _currentLocationText = locationData.address;
+          // Konum bilgisini forma ekle
+          _formData['Location'] = locationData.coordinates;
+          _formData['LocationText'] = locationData.address;
+        });
+
+        // Seçilen firma varsa konum kıyaslaması yap
+        if (_formData['CompanyId'] != null) {
+          await _compareWithCompanyLocation(
+            _formData['CompanyId'] as int,
+            locationData.latitude,
+            locationData.longitude,
+          );
+        }
+
+        SnackbarHelper.showSuccess(
+          context: context,
+          message: 'Konum alındı: ${locationData.address}',
+        );
+
+        debugPrint('[ADD_ACTIVITY] Location saved: ${locationData.coordinates}');
+      }
+    } catch (e) {
+      debugPrint('[ADD_ACTIVITY] Get location error: $e');
+
+      if (mounted) {
+        SnackbarHelper.showError(
+          context: context,
+          message: 'Konum alınamadı: ${e.toString()}',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGettingLocation = false;
+        });
+      }
+    }
+  }
+
+  // YENİ: Firma konumu ile kıyasla
+  Future<void> _compareWithCompanyLocation(int companyId, double currentLat, double currentLng) async {
+    try {
+      debugPrint('[ADD_ACTIVITY] Comparing with company location...');
+
+      final comparisonResult = await _activityApiService.compareLocations(
+        companyId: companyId,
+        currentLat: currentLat,
+        currentLng: currentLng,
+        toleranceInMeters: 100.0, // 100 metre tolerans
+      );
+
+      if (mounted) {
+        // Konum durumunu göster
+        final snackBarColor = comparisonResult.isAtSameLocation
+            ? AppColors.success
+            : comparisonResult.isDifferentLocation
+                ? AppColors.warning
+                : AppColors.error;
+
+        SnackbarHelper.showInfo(
+          context: context,
+          message: comparisonResult.message,
+          backgroundColor: snackBarColor,
+        );
+
+        // Konum durumunu state'e kaydet
+        setState(() {
+          _formData['LocationComparisonStatus'] = comparisonResult.status.name;
+          _formData['LocationComparisonMessage'] = comparisonResult.message;
+          _formData['LocationDistance'] = comparisonResult.distance?.toStringAsFixed(0);
+        });
+
+        debugPrint('[ADD_ACTIVITY] Location comparison: ${comparisonResult.message}');
+      }
+    } catch (e) {
+      debugPrint('[ADD_ACTIVITY] Location comparison error: $e');
+    }
+  }
+
   Future<void> _saveActivity() async {
     try {
       setState(() {
@@ -271,6 +370,7 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     );
   }
 
+  // 🚀 HYBRID STACK VERSİYONU
   Widget _buildBody() {
     if (_isLoading) {
       return _buildLoadingState();
@@ -284,12 +384,600 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
       return _buildEmptyState();
     }
 
-    return DynamicFormWidget(
-      formModel: _formModel!,
-      onFormChanged: _onFormDataChanged,
-      onSave: _saveActivity,
-      isLoading: _isSaving,
-      isEditing: isEditing,
+    return Stack(
+      children: [
+        // Ana form içeriği
+        Column(
+          children: [
+            // Normal form (kaydet butonunu gizle)
+            Expanded(
+              child: DynamicFormWidget(
+                formModel: _formModel!,
+                onFormChanged: _onFormDataChanged,
+                onSave: null, // Kaydet butonunu gizle
+                isLoading: _isSaving,
+                isEditing: isEditing,
+              ),
+            ),
+          ],
+        ),
+
+        // 🚀 CUSTOM FOOTER - En altta
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: _buildHybridFormActions(),
+        ),
+      ],
+    );
+  }
+
+  // 🚀 HYBRID FORM ACTIONS - Konum + Kaydet butonları
+  Widget _buildHybridFormActions() {
+    final size = AppSizes.of(context);
+
+    return Container(
+      padding: EdgeInsets.all(size.cardPadding),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.shadowMedium,
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 🎯 KONUM SEKSİYONU
+            _buildLocationSection(size),
+
+            SizedBox(height: size.mediumSpacing),
+
+            // 🎯 ANA AKSIYON BUTONLARI
+            Row(
+              children: [
+                // Cancel button
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppColors.textSecondary),
+                      padding: EdgeInsets.symmetric(vertical: size.buttonHeight * 0.25),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(size.cardBorderRadius),
+                      ),
+                    ),
+                    child: Text(
+                      'İptal',
+                      style: TextStyle(
+                        fontSize: size.textSize,
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+
+                SizedBox(width: size.mediumSpacing),
+
+                // Save button
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: _isSaving ? null : _saveActivity,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.textOnPrimary,
+                      padding: EdgeInsets.symmetric(vertical: size.buttonHeight * 0.25),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(size.cardBorderRadius),
+                      ),
+                      elevation: 3,
+                    ),
+                    child: _isSaving
+                        ? SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                AppColors.textOnPrimary,
+                              ),
+                            ),
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                isEditing ? Icons.update : Icons.save,
+                                size: 20,
+                              ),
+                              SizedBox(width: size.smallSpacing),
+                              Text(
+                                isEditing ? 'Güncelle' : 'Kaydet',
+                                style: TextStyle(
+                                  fontSize: size.textSize,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 🎯 KONUM SEKSİYONU - Akıllı görünüm
+  Widget _buildLocationSection(AppSizes size) {
+    final bool hasLocation = _currentLocationText != null;
+
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 300),
+      width: double.infinity,
+      padding: EdgeInsets.all(size.cardPadding * 0.8),
+      decoration: BoxDecoration(
+        color: hasLocation ? AppColors.success.withValues(alpha: 0.1) : AppColors.inputBackground,
+        borderRadius: BorderRadius.circular(size.cardBorderRadius),
+        border: Border.all(
+          color: hasLocation ? AppColors.success.withValues(alpha: 0.3) : AppColors.border,
+          width: 1.5,
+        ),
+      ),
+      child: hasLocation ? _buildLocationSuccess(size) : _buildLocationEmpty(size),
+    );
+  }
+
+  // 🎯 KONUM ALINDIĞINDA GÖSTERILEN GÖRÜNÜM
+  // AddActivityScreen'deki _buildLocationSuccess metodunu şu şekilde güncelle:
+
+// 🎯 KONUM ALINDIĞINDA GÖSTERILEN GÖRÜNÜM - GELİŞMİŞ
+  Widget _buildLocationSuccess(AppSizes size) {
+    return Column(
+      children: [
+        // Konum bilgisi header
+        Row(
+          children: [
+            Container(
+              padding: EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.success,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.location_on,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+            SizedBox(width: size.mediumSpacing),
+            Expanded(
+              child: Text(
+                'Konum Kıyaslaması',
+                style: TextStyle(
+                  fontSize: size.textSize * 0.95,
+                  color: AppColors.success,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            // Yeniden konum al butonu
+            IconButton(
+              onPressed: _isGettingLocation ? null : _getCurrentLocation,
+              icon: _isGettingLocation
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                      ),
+                    )
+                  : Icon(
+                      Icons.refresh,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+              tooltip: 'Konumu yenile',
+              splashRadius: 20,
+            ),
+            // Temizle butonu
+            IconButton(
+              onPressed: _clearLocation,
+              icon: Icon(
+                Icons.close,
+                color: AppColors.error,
+                size: 18,
+              ),
+              tooltip: 'Konumu temizle',
+              splashRadius: 20,
+            ),
+          ],
+        ),
+
+        SizedBox(height: size.mediumSpacing),
+
+        // 🎯 KONUM KARŞILAŞTIRMASI
+        _buildLocationComparison(size),
+
+        // Mesafe ve durum bilgisi
+        if (_formData['LocationDistance'] != null) ...[
+          SizedBox(height: size.mediumSpacing),
+          _buildLocationStatus(size),
+        ],
+      ],
+    );
+  }
+
+// 🎯 KONUM KARŞILAŞTIRMASI WİDGET'I
+  Widget _buildLocationComparison(AppSizes size) {
+    // Firma konumu bilgisi (eğer varsa)
+    final companyLocation = _getCompanyLocationText();
+
+    return Container(
+      padding: EdgeInsets.all(size.cardPadding * 0.8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(size.cardBorderRadius * 0.8),
+        border: Border.all(
+          color: AppColors.border.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Firma konumu
+          Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.business,
+                  color: AppColors.primary,
+                  size: 14,
+                ),
+              ),
+              SizedBox(width: size.smallSpacing),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Firma Konumu:',
+                      style: TextStyle(
+                        fontSize: size.smallText * 0.9,
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(height: size.tinySpacing),
+                    Text(
+                      companyLocation ?? 'Firma konumu kayıtlı değil',
+                      style: TextStyle(
+                        fontSize: size.smallText,
+                        color: companyLocation != null ? AppColors.textPrimary : AppColors.textTertiary,
+                        fontWeight: FontWeight.w500,
+                        fontStyle: companyLocation != null ? FontStyle.normal : FontStyle.italic,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // Ayırıcı çizgi
+          Container(
+            margin: EdgeInsets.symmetric(vertical: size.smallSpacing),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: AppColors.border.withValues(alpha: 0.3),
+                  ),
+                ),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: size.smallSpacing),
+                  child: Icon(
+                    Icons.compare_arrows,
+                    color: AppColors.textTertiary,
+                    size: 16,
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    color: AppColors.border.withValues(alpha: 0.3),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Mevcut konum
+          Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: AppColors.success.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.my_location,
+                  color: AppColors.success,
+                  size: 14,
+                ),
+              ),
+              SizedBox(width: size.smallSpacing),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Mevcut Konumum:',
+                      style: TextStyle(
+                        fontSize: size.smallText * 0.9,
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(height: size.tinySpacing),
+                    Text(
+                      _currentLocationText!,
+                      style: TextStyle(
+                        fontSize: size.smallText,
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+// 🎯 KONUM DURUMU WİDGET'I
+  Widget _buildLocationStatus(AppSizes size) {
+    final distance = _formData['LocationDistance'] as String?;
+    final status = _formData['LocationComparisonStatus'] as String?;
+    final message = _formData['LocationComparisonMessage'] as String?;
+
+    if (distance == null || status == null) {
+      return SizedBox.shrink();
+    }
+
+    // Durum rengini belirle
+    Color statusColor;
+    IconData statusIcon;
+
+    switch (status) {
+      case 'atLocation':
+        statusColor = AppColors.success;
+        statusIcon = Icons.check_circle;
+        break;
+      case 'nearby':
+        statusColor = AppColors.info;
+        statusIcon = Icons.location_on;
+        break;
+      case 'close':
+        statusColor = AppColors.warning;
+        statusIcon = Icons.warning;
+        break;
+      case 'far':
+      case 'veryFar':
+        statusColor = AppColors.error;
+        statusIcon = Icons.error;
+        break;
+      default:
+        statusColor = AppColors.textSecondary;
+        statusIcon = Icons.help;
+    }
+
+    return Container(
+      padding: EdgeInsets.all(size.cardPadding * 0.8),
+      decoration: BoxDecoration(
+        color: statusColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(size.cardBorderRadius * 0.8),
+        border: Border.all(
+          color: statusColor.withValues(alpha: 0.3),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        children: [
+          // Durum başlığı
+          Row(
+            children: [
+              Icon(
+                statusIcon,
+                color: statusColor,
+                size: 18,
+              ),
+              SizedBox(width: size.smallSpacing),
+              Expanded(
+                child: Text(
+                  _getStatusTitle(status),
+                  style: TextStyle(
+                    fontSize: size.textSize * 0.9,
+                    color: statusColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              // Mesafe badge
+              Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: size.smallSpacing,
+                  vertical: size.tinySpacing,
+                ),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${distance}m',
+                  style: TextStyle(
+                    fontSize: size.smallText * 0.8,
+                    color: statusColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // Durum mesajı
+          if (message != null) ...[
+            SizedBox(height: size.smallSpacing),
+            Text(
+              message,
+              style: TextStyle(
+                fontSize: size.smallText,
+                color: statusColor,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+// 🎯 YARDIMCI METODLAR
+  String? _getCompanyLocationText() {
+    // Eğer firma seçilmişse ve firma konumu varsa
+    if (_formData['CompanyId'] != null) {
+      // Bu bilgi API'den gelecek, şimdilik örnek
+      return 'Migros AVM, Battalgazi/Malatya';
+    }
+    return null;
+  }
+
+  String _getStatusTitle(String status) {
+    switch (status) {
+      case 'atLocation':
+        return 'AYNI KONUMDASINIZ';
+      case 'nearby':
+        return 'YAKINDASINIZ';
+      case 'close':
+        return 'YAKIN MESAFEDE';
+      case 'far':
+        return 'UZAK MESAFEDE';
+      case 'veryFar':
+        return 'ÇOK UZAK MESAFEDE';
+      case 'noCompanyLocation':
+        return 'FİRMA KONUMU KAYITLI DEĞİL';
+      case 'error':
+        return 'KONUM KIYASLANAMADI';
+      default:
+        return 'DURUM BELİRSİZ';
+    }
+  }
+
+// 🎯 KONUM ALINMADIĞINDA GÖSTERILEN GÖRÜNÜM
+  Widget _buildLocationEmpty(AppSizes size) {
+    return Column(
+      children: [
+        // Açıklama
+        // Row(
+        //   children: [
+        //     Icon(
+        //       Icons.info_outline,
+        //       color: AppColors.textSecondary,
+        //       size: 18,
+        //     ),
+        //     SizedBox(width: size.smallSpacing),
+        //     Expanded(
+        //       child: Text(
+        //         'Ziyaret konumunuzu kaydetmek için konum alın',
+        //         style: TextStyle(
+        //           fontSize: size.smallText,
+        //           color: AppColors.textSecondary,
+        //           fontWeight: FontWeight.w500,
+        //         ),
+        //       ),
+        //     ),
+        //   ],
+        // ),
+
+        // SizedBox(height: size.mediumSpacing),
+
+        // Konum al butonu
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _isGettingLocation ? null : _getCurrentLocation,
+            icon: _isGettingLocation
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                    ),
+                  )
+                : Icon(
+                    Icons.my_location,
+                    size: 18,
+                  ),
+            label: Text(
+              _isGettingLocation ? 'Konum Alınıyor...' : 'Konumumu Al',
+              style: TextStyle(
+                fontSize: size.textSize * 0.9,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppColors.primary, width: 1.5),
+              foregroundColor: AppColors.primary,
+              padding: EdgeInsets.symmetric(vertical: size.smallSpacing * 1.2),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(size.cardBorderRadius * 0.8),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Konum temizleme metodu
+  void _clearLocation() {
+    setState(() {
+      _currentLocationText = null;
+      _formData.remove('Location');
+      _formData.remove('LocationText');
+      _formData.remove('LocationComparisonStatus');
+      _formData.remove('LocationComparisonMessage');
+      _formData.remove('LocationDistance');
+    });
+
+    SnackbarHelper.showInfo(
+      context: context,
+      message: 'Konum bilgisi temizlendi',
     );
   }
 

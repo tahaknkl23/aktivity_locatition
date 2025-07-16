@@ -128,17 +128,7 @@ class _OnboardingLogoState extends State<OnboardingLogo> with SingleTickerProvid
                 ),
                 const SizedBox(height: 24),
                 const Text(
-                  'Activity Location',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primaryColor,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'CRM Sistemi',
+                  'Veribis Crm',
                   style: TextStyle(
                     fontSize: 16,
                     color: AppColors.textSecondary,

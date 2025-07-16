@@ -43,15 +43,17 @@ class SnackbarHelper {
     );
   }
 
+  // GÜNCELLENMIŞ: backgroundColor parametresi eklendi
   static void showInfo({
     required BuildContext context,
     required String message,
+    Color? backgroundColor, // EKLENEN PARAMETRE
     Duration duration = const Duration(seconds: 3),
   }) {
     _showSnackBar(
       context: context,
       message: message,
-      backgroundColor: Colors.blue,
+      backgroundColor: backgroundColor ?? Colors.blue, // Default blue
       icon: Icons.info,
       duration: duration,
     );

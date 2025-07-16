@@ -1,3 +1,4 @@
+import 'package:aktivity_location_app/core/services/location_service.dart';
 import 'package:flutter/material.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
 import '../../models/activity/activity_list_model.dart';
@@ -82,7 +83,7 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  /// Save activity form data
+  /// Save activity form data - DÜZELTİLDİ!
   Future<Map<String, dynamic>> saveActivity({
     required Map<String, dynamic> formData,
     int? activityId,
@@ -91,14 +92,19 @@ class ActivityApiService extends BaseApiService {
       debugPrint('[ACTIVITY_API] Saving activity - ID: $activityId');
       debugPrint('[ACTIVITY_API] Form data keys: ${formData.keys.toList()}');
 
-      final response = await saveFormData(
-        controller: 'AktiviteAdd',
-        formData: formData,
-        id: activityId,
+      // Web'de kullanılan endpoint'i kullan
+      final response = await ApiClient.post(
+        '/api/admin/DynamicFormApi/InsertData',
+        body: formData,
       );
 
-      debugPrint('[ACTIVITY_API] Activity saved successfully');
-      return response;
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        debugPrint('[ACTIVITY_API] Activity saved successfully');
+        return result;
+      } else {
+        throw Exception('Save failed: ${response.statusCode}');
+      }
     } catch (e) {
       debugPrint('[ACTIVITY_API] Save error: $e');
       rethrow;
@@ -523,6 +529,178 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
+  /// Firma konum bilgisini al
+  Future<LocationData?> getCompanyLocation(int companyId) async {
+    try {
+      debugPrint('[ACTIVITY_API] Getting company location for ID: $companyId');
+
+      // ANA FIRMA BİLGİLERİNİ ÇEK (CompanyAdd, CompanyAddressAdd değil)
+      final response = await ApiClient.post(
+        '/api/admin/DynamicFormApi/GetFormWithData',
+        body: {
+          "model": {
+            "controller": "CompanyAdd", // DEĞİŞTİRİLDİ
+            "id": companyId, // DEĞİŞTİRİLDİ
+            "url": "/Dyn/CompanyAdd/Detail", // DEĞİŞTİRİLDİ
+            "formParams": {},
+            "form_PATH": "/Dyn/CompanyAdd/Detail",
+            "culture": "tr"
+          },
+          "take": 10,
+          "skip": 0,
+          "page": 1,
+          "pageSize": 10
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        // DEBUG: Tüm response'u logla
+        debugPrint('[ACTIVITY_API] 🔍 COMPANY MAIN DATA DEBUG:');
+        debugPrint('[ACTIVITY_API] Data keys: ${data.keys.toList()}');
+        debugPrint('[ACTIVITY_API] Data.Data keys: ${data['Data']?.keys.toList()}');
+        debugPrint('[ACTIVITY_API] Data.Data.Data keys: ${data['Data']?['Data']?.keys.toList()}');
+
+        // Lokasyon field'larını farklı isimlerle ara
+        String? locationData;
+
+        // 1. "Lokasyon" field'ı
+        locationData = data['Data']?['Data']?['Lokasyon'] as String?;
+        debugPrint('[ACTIVITY_API] 🔍 Lokasyon field: $locationData');
+
+        // 2. "Location" field'ı
+        if (locationData == null || locationData.isEmpty) {
+          locationData = data['Data']?['Data']?['Location'] as String?;
+          debugPrint('[ACTIVITY_API] 🔍 Location field: $locationData');
+        }
+
+        // 3. "MapLocation" field'ı
+        if (locationData == null || locationData.isEmpty) {
+          locationData = data['Data']?['Data']?['MapLocation'] as String?;
+          debugPrint('[ACTIVITY_API] 🔍 MapLocation field: $locationData');
+        }
+
+        // 4. "Coordinates" field'ı
+        if (locationData == null || locationData.isEmpty) {
+          locationData = data['Data']?['Data']?['Coordinates'] as String?;
+          debugPrint('[ACTIVITY_API] 🔍 Coordinates field: $locationData');
+        }
+
+        // 5. "Konum" field'ı
+        if (locationData == null || locationData.isEmpty) {
+          locationData = data['Data']?['Data']?['Konum'] as String?;
+          debugPrint('[ACTIVITY_API] 🔍 Konum field: $locationData');
+        }
+
+        if (locationData != null && locationData.isNotEmpty) {
+          // Koordinatları parse et: "38.35386520000001, 38.3206558"
+          final parts = locationData.split(',');
+          if (parts.length == 2) {
+            final lat = double.tryParse(parts[0].trim());
+            final lng = double.tryParse(parts[1].trim());
+
+            if (lat != null && lng != null) {
+              debugPrint('[ACTIVITY_API] ✅ Company location found: $lat, $lng');
+
+              return LocationData(
+                latitude: lat,
+                longitude: lng,
+                address: 'Firma konumu',
+                timestamp: DateTime.now(),
+              );
+            } else {
+              debugPrint('[ACTIVITY_API] ❌ Invalid coordinates in location data: $locationData');
+            }
+          } else {
+            debugPrint('[ACTIVITY_API] ❌ Invalid location format: $locationData');
+          }
+        } else {
+          debugPrint('[ACTIVITY_API] ❌ Location data is null or empty');
+        }
+
+        debugPrint('[ACTIVITY_API] ⚠️ Company location not found in main company data');
+        return null;
+      } else {
+        throw Exception('Failed to get company location: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Get company location error: $e');
+      return null;
+    }
+  }
+
+  /// Konum kıyaslaması yap
+  Future<LocationComparisonResult> compareLocations({
+    required int companyId,
+    required double currentLat,
+    required double currentLng,
+    double toleranceInMeters = 100.0,
+  }) async {
+    try {
+      debugPrint('[ACTIVITY_API] Comparing locations for company: $companyId');
+      debugPrint('[ACTIVITY_API] Current location: $currentLat, $currentLng');
+
+      // Firma konumunu al
+      final companyLocation = await getCompanyLocation(companyId);
+
+      if (companyLocation == null) {
+        return LocationComparisonResult(
+          status: LocationComparisonStatus.noCompanyLocation,
+          message: '⚠️ Firma konumu kayıtlı değil. Konum kıyaslaması yapılamadı.',
+          distance: null,
+          companyLocation: null,
+        );
+      }
+
+      // Mesafeyi hesapla
+      final distance = LocationService.instance.calculateDistance(
+        currentLat,
+        currentLng,
+        companyLocation.latitude,
+        companyLocation.longitude,
+      );
+
+      debugPrint('[ACTIVITY_API] Distance: ${distance.toStringAsFixed(2)} meters');
+
+      // Konum durumunu belirle
+      LocationComparisonStatus status;
+      String message;
+
+      if (distance <= toleranceInMeters) {
+        status = LocationComparisonStatus.atLocation;
+        message = '✅ Aynı konumdasınız! (${distance.toStringAsFixed(0)}m)';
+      } else if (distance <= toleranceInMeters * 2) {
+        status = LocationComparisonStatus.nearby;
+        message = '📍 Firma yakınında (${distance.toStringAsFixed(0)}m)';
+      } else if (distance <= 500) {
+        status = LocationComparisonStatus.close;
+        message = '🚶 Farklı konumda - ${distance.toStringAsFixed(0)}m uzakta';
+      } else if (distance < 1000) {
+        status = LocationComparisonStatus.far;
+        message = '🚗 Farklı konumda - ${(distance / 1000).toStringAsFixed(1)}km uzakta';
+      } else {
+        status = LocationComparisonStatus.veryFar;
+        message = '🌍 Farklı konumda - ${(distance / 1000).toStringAsFixed(1)}km uzakta';
+      }
+
+      return LocationComparisonResult(
+        status: status,
+        message: message,
+        distance: distance,
+        companyLocation: companyLocation,
+      );
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Location comparison error: $e');
+      return LocationComparisonResult(
+        status: LocationComparisonStatus.error,
+        message: '❌ Konum kıyaslaması yapılamadı: ${e.toString()}',
+        distance: null,
+        companyLocation: null,
+      );
+    }
+  }
+
   /// Aktivite listesini getirir (YENİ METHOD)
   Future<ActivityListResponse> getActivityList({
     required ActivityFilter filter,
@@ -586,3 +764,32 @@ class ActivityApiService extends BaseApiService {
 
 // ActivityFilter enum - dosyanın sonunda
 enum ActivityFilter { open, closed, all }
+
+// Konum kıyaslaması sonuçları
+enum LocationComparisonStatus {
+  atLocation, // Aynı konumda
+  nearby, // Yakınında
+  close, // Yakın
+  far, // Uzak
+  veryFar, // Çok uzak
+  noCompanyLocation, // Firma konumu yok
+  error, // Hata
+}
+
+class LocationComparisonResult {
+  final LocationComparisonStatus status;
+  final String message;
+  final double? distance;
+  final LocationData? companyLocation;
+
+  LocationComparisonResult({
+    required this.status,
+    required this.message,
+    this.distance,
+    this.companyLocation,
+  });
+
+  bool get isAtSameLocation => status == LocationComparisonStatus.atLocation;
+  bool get isDifferentLocation =>
+      !isAtSameLocation && status != LocationComparisonStatus.noCompanyLocation && status != LocationComparisonStatus.error;
+}

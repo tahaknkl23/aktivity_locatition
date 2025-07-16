@@ -197,7 +197,7 @@ class _DomainSelectionScreenState extends State<DomainSelectionScreen> with Tick
 
                         // Header with Logo
                         Text(
-                          "Activity Location",
+                          "Veribis Crm",
                           style: TextStyle(
                             fontSize: size.largeText * 2.5,
                             color: AppColors.white,

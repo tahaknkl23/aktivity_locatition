@@ -113,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text(
-          'Activity Location CRM',
+          'Veribis CRM',
           style: TextStyle(
             fontWeight: FontWeight.bold,
           ),
@@ -151,7 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
             SizedBox(height: size.largeSpacing),
 
             // Recent Activities
-            _buildRecentActivities(size),
+            //_buildRecentActivities(size),
           ],
         ),
       ),
@@ -358,8 +358,8 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Expanded(
               child: _buildStatCard(
-                title: 'Toplam Firma',
-                value: '0',
+                title: 'Bugün Toplam Aktivite',
+                value: '2',
                 icon: Icons.business,
                 color: AppColors.info,
                 size: size,
@@ -368,10 +368,58 @@ class _HomeScreenState extends State<HomeScreen> {
             SizedBox(width: size.mediumSpacing),
             Expanded(
               child: _buildStatCard(
-                title: 'Aktif Aktivite',
-                value: '0',
+                title: 'Bugün Kalan Aktivite',
+                value: '1',
                 icon: Icons.assignment,
                 color: AppColors.success,
+                size: size,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: size.smallIcon),
+        Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                title: 'Yarın Toplam Aktivite',
+                value: '4',
+                icon: Icons.business,
+                color: AppColors.hardalColor,
+                size: size,
+              ),
+            ),
+            SizedBox(width: size.mediumSpacing),
+            Expanded(
+              child: _buildStatCard(
+                title: 'Yarın Kalan Aktivite',
+                value: '4',
+                icon: Icons.assignment,
+                color: Colors.purple,
+                size: size,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: size.smallIcon),
+        Row(
+          children: [
+            Expanded(
+              child: _buildStatCard(
+                title: 'Bu Hafta Toplam Aktivite',
+                value: '10',
+                icon: Icons.business,
+                color: AppColors.primaryDark,
+                size: size,
+              ),
+            ),
+            SizedBox(width: size.mediumSpacing),
+            Expanded(
+              child: _buildStatCard(
+                title: 'Bu Hafta Kalan Aktivite',
+                value: '9',
+                icon: Icons.assignment,
+                color: AppColors.redColor,
                 size: size,
               ),
             ),
@@ -432,64 +480,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildRecentActivities(AppSizes size) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Son Aktiviteler',
-          style: TextStyle(
-            fontSize: size.mediumText,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        SizedBox(height: size.mediumSpacing),
-        Container(
-          padding: EdgeInsets.all(size.cardPadding),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(size.cardBorderRadius),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 5,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              Icon(
-                Icons.inbox_outlined,
-                size: 64,
-                color: Colors.grey[300],
-              ),
-              SizedBox(height: size.mediumSpacing),
-              Text(
-                'Henüz aktivite yok',
-                style: TextStyle(
-                  fontSize: size.mediumText,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              SizedBox(height: size.smallSpacing),
-              Text(
-                'İlk aktivitenizi oluşturmak için yukarıdaki "Aktivite Ekle" butonunu kullanın',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: size.smallText,
-                  color: AppColors.textTertiary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

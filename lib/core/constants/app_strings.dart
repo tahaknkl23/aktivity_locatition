@@ -1,7 +1,7 @@
 class AppStrings {
   // App
-  static const String appName = "My CRM";
-  
+  static const String appName = "Veribis CRM";
+
   // Auth
   static const String logIn = "Giriş Yap";
   static const String userNameandEmail = "Kullanıcı adı veya e-posta";
@@ -10,11 +10,11 @@ class AppStrings {
   static const String forgotMyPassword = "Şifremi Unuttum";
   static const String ok = "Tamam";
   static const String cancel = "İptal";
-  
+
   // Domain
   static const String selectDomain = "Domain Seçiniz";
   static const String enterDomain = "Domain Giriniz";
-  
+
   // General
   static const String loading = "Yükleniyor...";
   static const String error = "Hata";

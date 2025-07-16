@@ -358,10 +358,17 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
         padding: EdgeInsets.all(size.cardPadding),
         itemCount: _activities.length + (_isLoadingMore ? 1 : 0),
         itemBuilder: (context, index) {
-          if (index == _activities.length) {
-            return _buildLoadingMoreIndicator(size);
+          // GÜVENLİK KONTROLÜ - EKLENEN
+          if (index >= _activities.length) {
+            // Loading more indicator
+            if (_isLoadingMore && index == _activities.length) {
+              return _buildLoadingMoreIndicator(size);
+            }
+            // Geçersiz index - empty container döndür
+            return const SizedBox.shrink();
           }
 
+          // Normal aktivite kartı
           final activity = _activities[index];
           return _buildActivityCard(activity, size);
         },

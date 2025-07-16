@@ -185,7 +185,7 @@ class _MyAppState extends State<MyApp> {
           ),
         );
       },
-      title: 'My CRM',
+      title: 'Veribis Crm',
       debugShowCheckedModeBanner: false,
       initialRoute: AppRoutes.onboarding,
       onGenerateRoute: AppRoutes.generateRoute,
