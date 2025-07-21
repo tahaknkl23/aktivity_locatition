@@ -1,11 +1,16 @@
+// company_api_service.dart - TAM HALİ (adres desteğiyle)
+
 import 'package:flutter/material.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
 import '../../models/company/company_list_model.dart';
+import '../../../data/models/activity/activity_list_model.dart'; // CompanyAddress için
 import 'base_api_service.dart';
 import 'api_client.dart';
 
 /// Company API service for handling company-related operations
 class CompanyApiService extends BaseApiService {
+  get math => null;
+
   /// Load company form structure for add/edit operations
   Future<DynamicFormModel> loadCompanyForm({int? companyId}) async {
     try {
@@ -78,6 +83,105 @@ class CompanyApiService extends BaseApiService {
     } catch (e) {
       debugPrint('[COMPANY_API] Save error: $e');
       rethrow;
+    }
+  }
+
+  /// 🆕 YENİ: Firma adreslerini getir
+  Future<CompanyAddressResponse> getCompanyAddresses({
+    required int companyId,
+    int page = 1,
+    int pageSize = 10,
+  }) async {
+    try {
+      debugPrint('[COMPANY_API] Loading addresses for company ID: $companyId');
+
+      final requestBody = {
+        "model": {
+          "Parameters": [
+            {"Name": "@Id", "Type": 2, "Value": companyId},
+            {"Name": "@FormId", "Type": 2, "Value": 3}
+          ],
+          "LayoutData": {"element": "MultiDataTabSection_grid_146", "url": "/Dyn/CompanyAdd/Detail"},
+          "model": {"columns": []},
+          "form_PATH": "Dyn/CompanyAddressAdd/Detail",
+          "type": "MultiDataGrid",
+          "apiUrl": null
+        },
+        "take": pageSize,
+        "skip": (page - 1) * pageSize,
+        "page": page,
+        "pageSize": pageSize
+      };
+
+      final response = await ApiClient.post(
+        '/api/admin/DynamicFormApi/GetReadReportDataAndType/146',
+        body: requestBody,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        debugPrint('[COMPANY_API] Company addresses loaded successfully');
+        return CompanyAddressResponse.fromJson(data);
+      } else {
+        throw Exception('Failed to load company addresses: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('[COMPANY_API] Get company addresses error: $e');
+      throw Exception('Firma adresleri yüklenemedi: ${e.toString()}');
+    }
+  }
+
+  /// 🆕 YENİ: Aktivite için firma adreslerini getir (select için)
+  Future<List<DropdownOption>> getCompanyAddressesForDropdown({
+    required int companyId,
+  }) async {
+    try {
+      debugPrint('[COMPANY_API] Loading address options for company: $companyId');
+
+      final addressResponse = await getCompanyAddresses(
+        companyId: companyId,
+        pageSize: 50, // Maksimum 50 adres
+      );
+
+      // Adresleri dropdown option'a çevir
+      final options = addressResponse.data.map((address) {
+        return DropdownOption(
+          value: address.id,
+          text: address.displayAddress,
+        );
+      }).toList();
+
+      debugPrint('[COMPANY_API] Loaded ${options.length} address options');
+      return options;
+    } catch (e) {
+      debugPrint('[COMPANY_API] Load address options error: $e');
+      return [];
+    }
+  }
+
+  /// 🆕 YENİ: Belirli bir adresi getir
+  Future<CompanyAddress?> getCompanyAddressById({
+    required int companyId,
+    required int addressId,
+  }) async {
+    try {
+      debugPrint('[COMPANY_API] Getting specific address: $addressId for company: $companyId');
+
+      final addressResponse = await getCompanyAddresses(companyId: companyId);
+
+      // Listede ara
+      for (final address in addressResponse.data) {
+        if (address.id == addressId) {
+          debugPrint('[COMPANY_API] Found address: ${address.displayAddress}');
+          return address;
+        }
+      }
+
+      debugPrint('[COMPANY_API] Address not found: $addressId');
+      return null;
+    } catch (e) {
+      debugPrint('[COMPANY_API] Get address by ID error: $e');
+      return null;
     }
   }
 
@@ -442,13 +546,27 @@ class CompanyApiService extends BaseApiService {
         requestBody["searchQuery"] = searchQuery;
       }
 
+      // 🔍 DEBUG: Request body'yi logla
+      debugPrint('[COMPANY_API] 🔍 Request body: $requestBody');
+
       final response = await ApiClient.post(
         '/api/admin/DynamicFormApi/GetFormListDataType',
         body: requestBody,
       );
 
+      // 🔍 DEBUG: Response'u logla
+      debugPrint('[COMPANY_API] 🔍 Response status: ${response.statusCode}');
+      debugPrint(
+          '[COMPANY_API] 🔍 Response body (first 1000 chars): ${response.body.length > 1000 ? response.body.substring(0, 1000) : response.body}');
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+
+        // 🔍 DEBUG: Response structure'ını logla
+        debugPrint('[COMPANY_API] 🔍 Response keys: ${data.keys.toList()}');
+        debugPrint('[COMPANY_API] 🔍 Data.Data length: ${data['Data']?.length ?? 0}');
+        debugPrint('[COMPANY_API] 🔍 Total count in response: ${data['Total'] ?? 'N/A'}');
+
         debugPrint('[COMPANY_API] Company list response received');
         return CompanyListResponse.fromJson(data);
       } else {
@@ -457,6 +575,106 @@ class CompanyApiService extends BaseApiService {
     } catch (e) {
       debugPrint('[COMPANY_API] Get company list error: $e');
       throw Exception('Firma listesi yüklenemedi: ${e.toString()}');
+    }
+  }
+
+  /// 🆕 YENİ: Firma adına göre company'yi bulup adreslerini getir
+  /// 🆕 YENİ: Firma adına göre company'yi bulup adreslerini getir
+  Future<List<CompanyAddress>> getCompanyAddressesByName(String companyName) async {
+    try {
+      debugPrint('[COMPANY_API] 🔍 Searching company by name: $companyName');
+
+      // 🆕 YENİ: Multi-page search - tüm firmaları çek
+      List<CompanyListItem> allCompanies = [];
+      int page = 1;
+      bool hasMore = true;
+
+      while (hasMore && page <= 10) {
+        // Max 10 sayfa kontrol et
+        debugPrint('[COMPANY_API] 🔍 Loading page $page...');
+
+        final companyList = await getCompanyList(
+          page: page,
+          pageSize: 50, // Her sayfadan 50 firma
+        );
+
+        debugPrint('[COMPANY_API] 🔍 Page $page: ${companyList.data.length} companies');
+
+        allCompanies.addAll(companyList.data);
+
+        // Eğer sayfa boyutundan az gelirse, son sayfa
+        hasMore = companyList.data.length >= 50;
+        page++;
+
+        // Erken çıkış: Aradığımız firmayı bulduk mu?
+        final found = allCompanies.any((company) => company.firma.toLowerCase().trim() == companyName.toLowerCase().trim());
+        if (found) {
+          debugPrint('[COMPANY_API] 🎯 Early exit - found target company on page ${page - 1}');
+          break;
+        }
+      }
+
+      debugPrint('[COMPANY_API] 🔍 Total companies loaded: ${allCompanies.length}');
+
+      // 2. Exact match ara
+      CompanyListItem? matchedCompany;
+      for (final company in allCompanies) {
+        if (company.firma.toLowerCase().trim() == companyName.toLowerCase().trim()) {
+          matchedCompany = company;
+          debugPrint('[COMPANY_API] ✅ EXACT MATCH FOUND: "${company.firma}"');
+          break;
+        }
+      }
+
+      // 3. Partial match ara
+      if (matchedCompany == null) {
+        debugPrint('[COMPANY_API] 🔍 No exact match, trying partial match...');
+        for (final company in allCompanies) {
+          if (company.firma.toLowerCase().contains(companyName.toLowerCase()) || companyName.toLowerCase().contains(company.firma.toLowerCase())) {
+            debugPrint('[COMPANY_API] 🔍 Partial match found: "${company.firma}"');
+            matchedCompany = company;
+            break;
+          }
+        }
+      }
+
+      if (matchedCompany == null) {
+        debugPrint('[COMPANY_API] ❌ Company not found: $companyName');
+        debugPrint('[COMPANY_API] 🔍 Total available companies: ${allCompanies.length}');
+        debugPrint('[COMPANY_API] 🔍 Sample companies: ${allCompanies.take(5).map((c) => c.firma).toList()}');
+        return [];
+      }
+
+      debugPrint('[COMPANY_API] ✅ Found company: ${matchedCompany.firma} (ID: ${matchedCompany.id})');
+
+      // 4. Company'nin adreslerini çek
+      final addressResponse = await getCompanyAddresses(
+        companyId: matchedCompany.id,
+        pageSize: 10,
+      );
+
+      debugPrint('[COMPANY_API] 🔍 Found ${addressResponse.data.length} addresses');
+      return addressResponse.data;
+    } catch (e) {
+      debugPrint('[COMPANY_API] ❌ Error searching company by name: $e');
+      return [];
+    }
+  }
+
+  /// 🧪 TEST: Mevcut firmalardan birini test et
+  Future<void> testExistingCompany() async {
+    try {
+      debugPrint('[COMPANY_API] 🧪 TEST: Testing with existing company...');
+
+      // Mevcut firmalardan MİGROS'u test edelim
+      final addresses = await getCompanyAddressesByName("MİGROS A.Ş.");
+
+      debugPrint('[COMPANY_API] 🧪 TEST RESULT: Found ${addresses.length} addresses for MİGROS A.Ş.');
+      for (final addr in addresses) {
+        debugPrint('[COMPANY_API] 🧪 Address: ${addr.displayAddress}');
+      }
+    } catch (e) {
+      debugPrint('[COMPANY_API] 🧪 TEST ERROR: $e');
     }
   }
 }

@@ -1,4 +1,5 @@
 import 'package:aktivity_location_app/core/services/location_service.dart';
+import 'package:aktivity_location_app/data/services/api/company_api_service.dart';
 import 'package:flutter/material.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
 import '../../models/activity/activity_list_model.dart';
@@ -701,7 +702,6 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  /// Aktivite listesini getirir (YENİ METHOD)
   Future<ActivityListResponse> getActivityList({
     required ActivityFilter filter,
     int page = 1,
@@ -711,27 +711,37 @@ class ActivityApiService extends BaseApiService {
     try {
       debugPrint('[ACTIVITY_API] Getting activity list - Filter: $filter, Page: $page, Size: $pageSize, Search: $searchQuery');
 
-      // Determine the endpoint based on filter
+      // 🔧 DÜZELTİLDİ: Web'deki ile birebir aynı endpoint'ler
       String params;
+      String formPath;
+
       switch (filter) {
         case ActivityFilter.open:
           params = "AcikAktiviteler";
+          formPath = "/Dyn/AktiviteAdd/List/AcikAktiviteler";
           break;
         case ActivityFilter.closed:
-          params = "KapaliAktiviteler";
+          params = "KapaliAktiviteler"; // ✅ Web'deki ile aynı
+          formPath = "/Dyn/AktiviteAdd/List/KapaliAktiviteler"; // ✅ Web'deki ile aynı
           break;
         case ActivityFilter.all:
-        default:
-          params = "AcikAktiviteler"; // Default to open
+          params = "List";
+          formPath = "/Dyn/AktiviteAdd/List";
           break;
       }
 
+      debugPrint('[ACTIVITY_API] 🎯 Using endpoint: $params, FormPath: $formPath');
+
+      // 🔧 Web'deki request body ile birebir aynı
       final requestBody = {
         "controller": "AktiviteAdd",
         "params": params,
-        "form_PATH": "/Dyn/AktiviteAdd/List/$params",
+        "form_PATH": formPath,
         "UserLocation": "0,0",
-        "LayoutData": {"element": "ListGrid", "url": "/Dyn/AktiviteAdd/List/$params"},
+        "LayoutData": {
+          "element": "ListGrid",
+          "url": formPath // ✅ Web'deki ile aynı
+        },
         "take": pageSize,
         "skip": (page - 1) * pageSize,
         "page": page,
@@ -743,6 +753,9 @@ class ActivityApiService extends BaseApiService {
         requestBody["searchQuery"] = searchQuery;
       }
 
+      debugPrint('[ACTIVITY_API] 📤 Request body for $filter:');
+      debugPrint('[ACTIVITY_API] 📤 ${requestBody.toString()}');
+
       final response = await ApiClient.post(
         '/api/admin/DynamicFormApi/GetFormListDataType',
         body: requestBody,
@@ -750,14 +763,234 @@ class ActivityApiService extends BaseApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        debugPrint('[ACTIVITY_API] Activity list response received');
+        debugPrint('[ACTIVITY_API] ✅ Activity list response received for filter: $filter');
+        debugPrint('[ACTIVITY_API] 📊 Response data keys: ${data.keys.toList()}');
+
+        // Response'da data'nın içeriğini de logla
+        if (data['DataSourceResult'] != null && data['DataSourceResult']['Data'] != null) {
+          final activities = data['DataSourceResult']['Data'] as List;
+          debugPrint('[ACTIVITY_API] 📊 Found ${activities.length} activities for filter: $filter');
+
+          // İlk birkaç aktiviteyi logla (debug için)
+          if (activities.isNotEmpty) {
+            final firstActivity = activities.first;
+            debugPrint('[ACTIVITY_API] 📋 First activity: ID=${firstActivity['Id']}, Tipi=${firstActivity['Tipi']}, Firma=${firstActivity['Firma']}');
+          }
+        }
+
         return ActivityListResponse.fromJson(data);
       } else {
+        debugPrint('[ACTIVITY_API] ❌ Failed response: ${response.statusCode} - ${response.body}');
         throw Exception('Failed to load activity list: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('[ACTIVITY_API] Get activity list error: $e');
-      throw Exception('Aktivite listesi yüklenemedi: ${e.toString()}');
+      debugPrint('[ACTIVITY_API] ❌ Get activity list error for filter $filter: $e');
+      throw Exception('Aktivite listesi yüklenemedi ($filter): ${e.toString()}');
+    }
+  }
+
+  /// Aktivite listesini getirir (YENİ METHOD)
+  Future<ActivityListResponse> getActivityListWithAddresses({
+    required ActivityFilter filter,
+    int page = 1,
+    int pageSize = 20,
+    String? searchQuery,
+  }) async {
+    try {
+      debugPrint('[ACTIVITY_API] Getting activity list with addresses - Filter: $filter, Page: $page');
+
+      // Önce normal aktivite listesini al
+      final activityResponse = await getActivityList(
+        filter: filter,
+        page: page,
+        pageSize: pageSize,
+        searchQuery: searchQuery,
+      );
+
+      // Her aktivite için adres bilgilerini zenginleştir
+      final enrichedActivities = <ActivityListItem>[];
+
+      for (final activity in activityResponse.data) {
+        var enrichedActivity = activity;
+
+        // Eğer aktivitede CompanyId ve AddressId varsa, adres detaylarını al
+        if (activity.id > 0) {
+          try {
+            // TODO: Aktivite detayından CompanyId ve AddressId'yi al
+            // Bu bilgiler aktivite API'sinden gelmelidir
+            enrichedActivity = await _enrichActivityWithAddress(activity);
+          } catch (e) {
+            debugPrint('[ACTIVITY_API] Failed to enrich activity ${activity.id} with address: $e');
+            // Hata durumunda orijinal aktiviteyi kullan
+          }
+        }
+
+        enrichedActivities.add(enrichedActivity);
+      }
+
+      return ActivityListResponse(
+        data: enrichedActivities,
+        total: activityResponse.total,
+      );
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Get activity list with addresses error: $e');
+      rethrow;
+    }
+  }
+
+  /// 🆕 YENİ: Aktiviteyi adres bilgileriyle zenginleştir
+  Future<ActivityListItem> _enrichActivityWithAddress(ActivityListItem activity) async {
+    try {
+      // Bu metod aktivite detay API'sinden CompanyId ve AddressId alıp
+      // ilgili adres bilgilerini getirerek aktiviteyi zenginleştirir
+
+      // TODO: Aktivite detay API'sinden company ve address ID'lerini al
+      // Şimdilik mock veri ile test edelim
+
+      return activity; // Geçici olarak orijinal aktiviteyi döndür
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Enrich activity error: $e');
+      return activity;
+    }
+  }
+
+  /// 🆕 YENİ: Aktivite için mevcut adresleri getir (firma seçilince)
+  Future<List<DropdownOption>> getActivityAddressOptions({
+    required int companyId,
+  }) async {
+    try {
+      debugPrint('[ACTIVITY_API] Getting address options for activity - Company: $companyId');
+
+      final companyApiService = CompanyApiService();
+      final addressOptions = await companyApiService.getCompanyAddressesForDropdown(
+        companyId: companyId,
+      );
+
+      debugPrint('[ACTIVITY_API] Found ${addressOptions.length} address options');
+      return addressOptions;
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Get address options error: $e');
+      return [];
+    }
+  }
+
+  /// 🆕 YENİ: Firma adını kullanarak activity'leri adres bilgileriyle zenginleştir
+  Future<List<ActivityListItem>> enrichActivitiesWithAddressesByName(List<ActivityListItem> activities) async {
+    final enrichedActivities = <ActivityListItem>[];
+
+    // 🔍 DEBUG: Başlangıç logları
+    debugPrint('[ACTIVITY_API] 🔍 DEBUG: Starting enrichment for ${activities.length} activities');
+    for (int i = 0; i < activities.length; i++) {
+      debugPrint('[ACTIVITY_API] 🔍 Activity $i: ID=${activities[i].id}, Firma="${activities[i].firma}"');
+    }
+
+    for (final activity in activities) {
+      // 🔍 DEBUG: Her aktivite için detay
+      debugPrint('[ACTIVITY_API] 🔍 Processing activity ID: ${activity.id}');
+      debugPrint('[ACTIVITY_API] 🔍 Activity firma: "${activity.firma}"');
+      debugPrint('[ACTIVITY_API] 🔍 Firma null? ${activity.firma == null}');
+      debugPrint('[ACTIVITY_API] 🔍 Firma empty? ${activity.firma?.isEmpty ?? true}');
+
+      if (activity.firma != null && activity.firma!.isNotEmpty) {
+        try {
+          debugPrint('[ACTIVITY_API] 🔄 Loading addresses for company: ${activity.firma}');
+
+          // Company adreslerini firma adıyla bul
+          final companyApiService = CompanyApiService();
+          final addresses = await companyApiService.getCompanyAddressesByName(activity.firma!);
+
+          debugPrint('[ACTIVITY_API] 🔍 Found ${addresses.length} addresses for ${activity.firma}');
+
+          if (addresses.isNotEmpty) {
+            // 🎯 AKILLI ADRES SEÇİMİ: En uygun adresi seç
+            CompanyAddress selectedAddress;
+
+            // 1. "Ana" tipi varsa onu seç
+            final anaAdres = addresses.where((addr) => addr.tipi?.toLowerCase().contains('ana') == true).toList();
+
+            // 2. "Merkez" tipi varsa onu seç
+            final merkezAdres = addresses.where((addr) => addr.tipi?.toLowerCase().contains('merkez') == true).toList();
+
+            // 3. Kısa adresi olan varsa onu seç
+            final kisaAdresli = addresses.where((addr) => addr.kisaAdres != null && addr.kisaAdres!.isNotEmpty).toList();
+
+            if (anaAdres.isNotEmpty) {
+              selectedAddress = anaAdres.first;
+              debugPrint('[ACTIVITY_API] 🎯 Selected ANA address: ${selectedAddress.displayAddress}');
+            } else if (merkezAdres.isNotEmpty) {
+              selectedAddress = merkezAdres.first;
+              debugPrint('[ACTIVITY_API] 🎯 Selected MERKEZ address: ${selectedAddress.displayAddress}');
+            } else if (kisaAdresli.isNotEmpty) {
+              selectedAddress = kisaAdresli.first;
+              debugPrint('[ACTIVITY_API] 🎯 Selected address with KisaAdres: ${selectedAddress.displayAddress}');
+            } else {
+              selectedAddress = addresses.first;
+              debugPrint('[ACTIVITY_API] 🎯 Selected FIRST address: ${selectedAddress.displayAddress}');
+            }
+
+            // Activity'yi seçilen adres bilgileriyle zenginleştir
+            final enriched = ActivityListItem(
+              id: activity.id,
+              tipi: activity.tipi,
+              konu: activity.konu,
+              firma: activity.firma,
+              kisi: activity.kisi,
+              baslangic: activity.baslangic,
+              temsilci: activity.temsilci,
+              detay: activity.detay,
+              // 🆕 Seçilen adres bilgileri
+              kisaAdres: selectedAddress.kisaAdres,
+              acikAdres: selectedAddress.acikAdres,
+              il: selectedAddress.il,
+              ilce: selectedAddress.ilce,
+              ulke: selectedAddress.ulke,
+              adresTipi: selectedAddress.tipi,
+            );
+
+            enrichedActivities.add(enriched);
+            debugPrint('[ACTIVITY_API] ✅ Address added for ${activity.firma}: ${selectedAddress.displayAddress}');
+          } else {
+            enrichedActivities.add(activity); // Adres bulunamadı
+            debugPrint('[ACTIVITY_API] ⚠️ No address found for company: ${activity.firma}');
+          }
+        } catch (e) {
+          enrichedActivities.add(activity); // Hata durumunda orijinal
+          debugPrint('[ACTIVITY_API] ❌ Failed to load address for ${activity.firma}: $e');
+        }
+      } else {
+        debugPrint('[ACTIVITY_API] ⚠️ SKIPPING - Firma is null or empty for activity ${activity.id}');
+        enrichedActivities.add(activity); // Firma adı yok
+      }
+    }
+
+    debugPrint('[ACTIVITY_API] 🔍 DEBUG: Enrichment completed. Input: ${activities.length}, Output: ${enrichedActivities.length}');
+    return enrichedActivities;
+  }
+
+  /// 🆕 YENİ: Seçilen adresin detay bilgilerini getir
+  Future<CompanyAddress?> getSelectedAddressDetails({
+    required int companyId,
+    required int addressId,
+  }) async {
+    try {
+      debugPrint('[ACTIVITY_API] Getting address details - Company: $companyId, Address: $addressId');
+
+      final companyApiService = CompanyApiService();
+      final address = await companyApiService.getCompanyAddressById(
+        companyId: companyId,
+        addressId: addressId,
+      );
+
+      if (address != null) {
+        debugPrint('[ACTIVITY_API] Found address: ${address.displayAddress}');
+      } else {
+        debugPrint('[ACTIVITY_API] Address not found');
+      }
+
+      return address;
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Get address details error: $e');
+      return null;
     }
   }
 }

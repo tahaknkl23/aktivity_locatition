@@ -66,38 +66,67 @@ class SnackbarHelper {
     required IconData icon,
     required Duration duration,
   }) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(icon, color: Colors.white, size: 20),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
+    // 🔧 GÜVENLİ KONTROL: Context'in mounted olup olmadığını kontrol et
+    if (!_isContextValid(context)) {
+      debugPrint('[SNACKBAR] Context is not valid, skipping SnackBar');
+      return;
+    }
+
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(icon, color: Colors.white, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
+          backgroundColor: backgroundColor,
+          duration: duration,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(16),
+          action: SnackBarAction(
+            label: 'Tamam',
+            textColor: Colors.white,
+            onPressed: () {
+              // 🔧 GÜVENLİ KONTROL: Hide işlemi için de kontrol
+              if (_isContextValid(context)) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              }
+            },
+          ),
         ),
-        backgroundColor: backgroundColor,
-        duration: duration,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        margin: const EdgeInsets.all(16),
-        action: SnackBarAction(
-          label: 'Tamam',
-          textColor: Colors.white,
-          onPressed: () {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          },
-        ),
-      ),
-    );
+      );
+    } catch (e) {
+      debugPrint('[SNACKBAR] Error showing SnackBar: $e');
+    }
+  }
+
+  // 🔧 YENİ: Context'in geçerli olup olmadığını kontrol et
+  static bool _isContextValid(BuildContext context) {
+    try {
+      // Context'in mounted olup olmadığını kontrol et
+      if (context.mounted) {
+        // ScaffoldMessenger'ın mevcut olup olmadığını kontrol et
+        ScaffoldMessenger.of(context);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[SNACKBAR] Context validation error: $e');
+      return false;
+    }
   }
 }

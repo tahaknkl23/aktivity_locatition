@@ -30,7 +30,7 @@ class SessionTimeoutService {
   void recordActivity() {
     _lastActivity = DateTime.now();
     _resetTimer();
-    debugPrint('[SessionTimeout] Activity recorded at ${_lastActivity}');
+    debugPrint('[SessionTimeout] Activity recorded at $_lastActivity');
   }
 
   /// Reset the session timer
@@ -53,10 +53,10 @@ class SessionTimeoutService {
   /// Get remaining time until timeout
   Duration? get remainingTime {
     if (_lastActivity == null) return null;
-    
+
     final elapsed = DateTime.now().difference(_lastActivity!);
     final remaining = _timeoutDuration - elapsed;
-    
+
     return remaining.isNegative ? Duration.zero : remaining;
   }
 
@@ -64,7 +64,7 @@ class SessionTimeoutService {
   bool isAboutToExpire({Duration warningTime = const Duration(minutes: 5)}) {
     final remaining = remainingTime;
     if (remaining == null) return false;
-    
+
     return remaining <= warningTime;
   }
 }
