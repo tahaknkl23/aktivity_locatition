@@ -1,9 +1,8 @@
-// lib/presentation/screens/activity/add_activity_screen_refactored.dart
+// lib/presentation/screens/activity/add_activity_screen_refactored.dart - FIXED
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/helpers/snackbar_helper.dart';
 import '../../../core/widgets/dynamic_form/dynamic_form_widget.dart';
-import '../../../core/widgets/form/form_actions_widget.dart';
 import '../../../core/widgets/common/loading_state_widget.dart';
 import '../../../core/widgets/common/error_state_widget.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
@@ -11,6 +10,7 @@ import '../../../data/models/activity/activity_list_model.dart';
 import '../../../data/services/api/activity_api_service.dart';
 import '../../widgets/activity/location_management_widget.dart';
 import '../../widgets/activity/address_info_widget.dart';
+import '../../../data/models/attachment/attachment_file_model.dart';
 
 class AddActivityScreen extends StatefulWidget {
   final int? activityId;
@@ -37,6 +37,10 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
 
   // Address management
   CompanyAddress? _selectedAddress;
+
+  // 📎 File management
+  final List<AttachmentFile> _attachedFiles = [];
+  int? savedActivityId;
 
   @override
   void initState() {
@@ -68,6 +72,11 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
           // Pre-select company if provided
           if (widget.preSelectedCompanyId != null && !isEditing) {
             _formData['CompanyId'] = widget.preSelectedCompanyId;
+          }
+
+          // Set saved activity ID for file uploads
+          if (isEditing) {
+            savedActivityId = widget.activityId;
           }
 
           _isLoading = false;
@@ -221,6 +230,27 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     });
   }
 
+  // 📎 File upload callbacks
+  void onFileUploaded(AttachmentFile file) {
+    setState(() {
+      _attachedFiles.add(file);
+    });
+    SnackbarHelper.showSuccess(
+      context: context,
+      message: 'Dosya yüklendi: ${file.fileName}',
+    );
+  }
+
+  void onFileDeleted(AttachmentFile file) {
+    setState(() {
+      _attachedFiles.removeWhere((f) => f.id == file.id);
+    });
+    SnackbarHelper.showInfo(
+      context: context,
+      message: 'Dosya silindi: ${file.fileName}',
+    );
+  }
+
   // 🔒 Aktiviteyi kapat
   Future<void> _closeActivity() async {
     if (_formData['Location'] == null) {
@@ -323,7 +353,19 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
       final cleanedData = _cleanFormData();
       _ensureRequiredFields(cleanedData);
 
+      final result = await _activityApiService.saveActivity(
+        formData: cleanedData,
+        activityId: widget.activityId,
+      );
+
       if (mounted) {
+        // Set saved activity ID for file uploads if this is a new activity
+        if (!isEditing && result['Data']?['Id'] != null) {
+          setState(() {
+            savedActivityId = result['Data']['Id'] as int;
+          });
+        }
+
         SnackbarHelper.showSuccess(
           context: context,
           message: isEditing ? 'Aktivite başarıyla güncellendi!' : 'Aktivite başarıyla kaydedildi!',
@@ -387,11 +429,11 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: _buildBody(),
+      body: buildBody(),
     );
   }
 
-  Widget _buildBody() {
+  Widget buildBody() {
     if (_isLoading) {
       return LoadingStateWidget(
         title: isEditing ? 'Aktivite bilgileri yükleniyor...' : 'Form yükleniyor...',
@@ -434,28 +476,167 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
           ],
         ),
 
-        // Custom footer
+        // 🔧 FIX: Custom footer with built-in close button
         Positioned(
           bottom: 0,
           left: 0,
           right: 0,
-          child: FormActionsWidget(
-            isSaving: _isSaving,
-            isEditing: isEditing,
-            onSave: _saveActivity,
-            additionalContent: _buildAdditionalContent(),
+          child: Container(
+            padding: EdgeInsets.all(12), // Küçültüldü
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 8, // Küçültüldü
+                  offset: Offset(0, -1), // Küçültüldü
+                ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 📎 Additional content (file upload, address, location) - KOMPAKT
+                  if (_buildAdditionalContent() != null)
+                    Padding(
+                      padding: EdgeInsets.only(bottom: 12), // Küçültüldü
+                      child: _buildAdditionalContent()!,
+                    ),
+
+                  // Action buttons - KOMPAKT
+                  Row(
+                    children: [
+                      // Cancel button - küçük
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: AppColors.textSecondary),
+                            padding: EdgeInsets.symmetric(vertical: 12), // Küçültüldü
+                          ),
+                          child: Text(
+                            'İptal',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 14, // Küçültüldü
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      SizedBox(width: 12), // Küçültüldü
+
+                      // Save button - küçük
+                      Expanded(
+                        flex: 2,
+                        child: ElevatedButton(
+                          onPressed: _isSaving ? null : _saveActivity,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(vertical: 12), // Küçültüldü
+                            elevation: 3,
+                          ),
+                          child: _isSaving
+                              ? Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    SizedBox(
+                                      height: 16, // Küçültüldü
+                                      width: 16, // Küçültüldü
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    ),
+                                    SizedBox(width: 6),
+                                    Text('Kaydediliyor...', style: TextStyle(fontSize: 14)),
+                                  ],
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(isEditing ? Icons.update : Icons.save, size: 18), // Küçültüldü
+                                    SizedBox(width: 6),
+                                    Text(
+                                      isEditing ? 'Güncelle' : 'Kaydet',
+                                      style: TextStyle(
+                                        fontSize: 14, // Küçültüldü
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ],
     );
   }
 
-  // 📍 Ek içerik (adres + konum)
+  // 📍 Ek içerik (dosya + adres + konum) - KOMPAKT
   Widget? _buildAdditionalContent() {
     return Column(
       children: [
-        // Seçilen adres bilgisi
-        if (_selectedAddress != null) AddressInfoWidget(address: _selectedAddress!),
+        // 📎 KOMPAKT DOSYA UPLOAD BUTONU
+        Container(
+          margin: EdgeInsets.only(bottom: 12),
+          child: Row(
+            children: [
+              // Dosya seç butonu
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    // TODO: Dosya seç
+                    print('Dosya seç');
+                  },
+                  icon: Icon(Icons.attach_file, size: 18),
+                  label: Text('Dosya Ekle', style: TextStyle(fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    side: BorderSide(color: AppColors.primary),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Yüklenen dosyalar sayısı (varsa)
+        if (_attachedFiles.isNotEmpty)
+          Container(
+            margin: EdgeInsets.only(bottom: 12),
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.success.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+            ),
+            child: Text(
+              '${_attachedFiles.length} dosya eklendi',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.success,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+
+        // Seçilen adres bilgisi (kompakt)
+        if (_selectedAddress != null)
+          Container(
+            margin: EdgeInsets.only(bottom: 8),
+            child: AddressInfoWidget(address: _selectedAddress!),
+          ),
 
         // Konum yönetimi
         LocationManagementWidget(

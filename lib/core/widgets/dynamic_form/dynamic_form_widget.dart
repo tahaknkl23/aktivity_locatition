@@ -11,6 +11,8 @@ class DynamicFormWidget extends StatefulWidget {
   final VoidCallback? onSave;
   final bool isLoading;
   final bool isEditing;
+  final bool showHeader; // 🆕 Header gösterme kontrolü
+  final bool showActions; // 🆕 Alt buton gösterme kontrolü
 
   const DynamicFormWidget({
     super.key,
@@ -19,6 +21,8 @@ class DynamicFormWidget extends StatefulWidget {
     this.onSave,
     this.isLoading = false,
     this.isEditing = false,
+    this.showHeader = true, // Default true
+    this.showActions = true, // Default true
   });
 
   @override
@@ -80,15 +84,18 @@ class _DynamicFormWidgetState extends State<DynamicFormWidget> {
     return Form(
       key: _formKey,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Form header
-          _buildFormHeader(size),
-
-          SizedBox(height: size.largeSpacing),
+          // 🔧 Form header - sadece showHeader true ise göster
+          if (widget.showHeader) ...[
+            _buildFormHeader(size),
+            SizedBox(height: size.largeSpacing),
+          ],
 
           // Form sections
-          Expanded(
+          Flexible(
+            fit: FlexFit.loose,
             child: SingleChildScrollView(
               padding: EdgeInsets.symmetric(horizontal: size.horizontalPadding),
               child: Column(
@@ -101,8 +108,8 @@ class _DynamicFormWidgetState extends State<DynamicFormWidget> {
             ),
           ),
 
-          // Form actions
-          _buildFormActions(size),
+          // 🔧 Form actions - sadece showActions true ise ve onSave null değilse göster
+          if (widget.showActions && widget.onSave != null) _buildFormActions(size),
         ],
       ),
     );

@@ -1,3 +1,4 @@
+// lib/core/routes/app_routes.dart - GÜNCELLENMİŞ
 import 'package:flutter/material.dart';
 import '../../presentation/screens/onboarding/onboarding_screen.dart';
 import '../../presentation/screens/onboarding/domain_selection_screen.dart';
@@ -6,7 +7,7 @@ import '../../presentation/screens/auth/forgot_password_screen.dart';
 import '../../presentation/screens/main/main_screen.dart';
 import '../../presentation/screens/home/home_screen.dart';
 import '../../presentation/screens/company/add_company_screen.dart';
-import '../../presentation/screens/activity/add_activity_screen.dart';
+import '../../presentation/screens/activity/add_activity_screen.dart'; // ✅ Düzeltilmiş import
 
 class AppRoutes {
   static const String onboarding = '/';
@@ -17,6 +18,8 @@ class AppRoutes {
   static const String home = '/home';
   static const String addCompany = '/add-company';
   static const String addActivity = '/add-activity';
+  static const String activityList = '/activity-list';
+  static const String companyList = '/company-list';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {
@@ -50,6 +53,7 @@ class AppRoutes {
         final args = settings.arguments as Map<String, dynamic>?;
         return MaterialPageRoute(
           builder: (_) => AddActivityScreen(
+            // ✅ Düzeltilmiş class ismi
             activityId: args?['activityId'] as int?,
             preSelectedCompanyId: args?['companyId'] as int?,
           ),

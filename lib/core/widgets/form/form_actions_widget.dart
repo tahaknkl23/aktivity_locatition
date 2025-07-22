@@ -9,6 +9,7 @@ class FormActionsWidget extends StatelessWidget {
   final VoidCallback onSave;
   final VoidCallback? onCancel;
   final Widget? additionalContent;
+  final VoidCallback? onClose;
 
   const FormActionsWidget({
     super.key,
@@ -17,6 +18,7 @@ class FormActionsWidget extends StatelessWidget {
     required this.onSave,
     this.onCancel,
     this.additionalContent,
+    this.onClose,
   });
 
   @override
