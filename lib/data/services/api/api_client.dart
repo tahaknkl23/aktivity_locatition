@@ -214,7 +214,7 @@ class ApiException implements Exception {
 class TimeoutException implements Exception {
   final String message;
 
-  TimeoutException(this.message);
+  TimeoutException(this.message, Duration duration);
 
   @override
   String toString() => message;

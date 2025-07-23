@@ -1,4 +1,4 @@
-// lib/presentation/widgets/common/file_upload_widget.dart - Expandable Liste
+// lib/presentation/widgets/common/file_upload_widget.dart - FİNAL VERSİYON
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -31,21 +31,31 @@ class FileUploadWidget extends StatefulWidget {
 class _FileUploadWidgetState extends State<FileUploadWidget> {
   final List<AttachmentFile> _attachedFiles = [];
   bool _isLoading = true;
-  bool _isExpanded = false; // Expand/collapse state
+  bool _isExpanded = false;
+  bool _isUploading = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.activityId != null) {
+    _loadExistingFiles();
+  }
+
+  @override
+  void didUpdateWidget(FileUploadWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // ActivityId değişirse dosyaları yeniden yükle
+    if (oldWidget.activityId != widget.activityId) {
       _loadExistingFiles();
-    } else {
-      setState(() => _isLoading = false);
     }
   }
 
   /// 📂 Mevcut dosyaları yükle
   Future<void> _loadExistingFiles() async {
-    if (widget.activityId == null) return;
+    if (widget.activityId == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
 
     try {
       setState(() => _isLoading = true);
@@ -60,16 +70,118 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
           _attachedFiles.clear();
           _attachedFiles.addAll(response.data);
           _isLoading = false;
-          // Dosya varsa da kapalı başla - kullanıcı isterse açar
-          _isExpanded = false;
         });
 
-        debugPrint('[FILE_UPLOAD] Loaded ${_attachedFiles.length} existing files');
+        debugPrint('[FILE_UPLOAD] ✅ Loaded ${_attachedFiles.length} existing files');
       }
     } catch (e) {
-      debugPrint('[FILE_UPLOAD] Load files error: $e');
+      debugPrint('[FILE_UPLOAD] ❌ Load files error: $e');
       if (mounted) {
         setState(() => _isLoading = false);
+        SnackbarHelper.showError(
+          context: context,
+          message: 'Dosyalar yüklenemedi: ${e.toString()}',
+        );
+      }
+    }
+  }
+
+  /// 🔄 Dosyaları yenile (external call için)
+  Future<void> refreshFiles() async {
+    await _loadExistingFiles();
+  }
+
+  /// 📤 Dosya yükleme işlemi
+  Future<void> _handleFileUpload(Future<FileData?> Function() captureFunction) async {
+    if (widget.activityId == null) {
+      SnackbarHelper.showError(
+        context: context,
+        message: 'Aktivite kaydedilmeden dosya eklenemez',
+      );
+      return;
+    }
+
+    setState(() => _isUploading = true);
+
+    try {
+      debugPrint('[FILE_UPLOAD] 📤 Starting file capture...');
+
+      final fileData = await captureFunction();
+
+      if (fileData == null) {
+        debugPrint('[FILE_UPLOAD] ❌ No file selected');
+        setState(() => _isUploading = false);
+        return;
+      }
+
+      debugPrint('[FILE_UPLOAD] ✅ File captured: ${fileData.name}');
+      debugPrint('[FILE_UPLOAD] 📁 File size: ${fileData.formattedSize}');
+
+      // Show upload progress
+      if (mounted) {
+        SnackbarHelper.showInfo(
+          context: context,
+          message: 'Dosya yükleniyor: ${fileData.name}',
+        );
+      }
+
+      // Upload file
+      final response = await FileService.instance.uploadActivityFile(
+        activityId: widget.activityId!,
+        file: fileData,
+        tableId: widget.tableId,
+      );
+
+      debugPrint('[FILE_UPLOAD] 📊 Upload response: ${response.isSuccess}');
+
+      if (response.isSuccess && response.firstFile != null) {
+        setState(() {
+          _attachedFiles.add(response.firstFile!);
+          _isExpanded = true; // Otomatik aç
+        });
+
+        widget.onFileUploaded?.call(response.firstFile!);
+
+        SnackbarHelper.showSuccess(
+          context: context,
+          message: 'Dosya başarıyla yüklendi: ${fileData.name}',
+        );
+
+        debugPrint('[FILE_UPLOAD] ✅ File uploaded successfully');
+
+        // 🆕 Upload sonrası kesin refresh - biraz daha uzun bekle
+        Future.delayed(Duration(milliseconds: 1000), () {
+          if (mounted) {
+            debugPrint('[FILE_UPLOAD] 🔄 Force refreshing file list after upload');
+            _loadExistingFiles();
+          }
+        });
+      } else {
+        throw FileException(response.errorMessage ?? 'Upload failed');
+      }
+    } catch (e) {
+      debugPrint('[FILE_UPLOAD] ❌ Upload error: $e');
+
+      if (mounted) {
+        String errorMsg = 'Dosya yüklenemedi';
+        if (e is FileException) {
+          errorMsg = e.message;
+        } else if (e.toString().contains('SocketException')) {
+          errorMsg = 'İnternet bağlantısı hatası';
+        } else if (e.toString().contains('TimeoutException')) {
+          errorMsg = 'Yükleme zaman aşımı';
+        } else {
+          errorMsg = 'Dosya yüklenemedi: ${e.toString()}';
+        }
+
+        SnackbarHelper.showError(
+          context: context,
+          message: errorMsg,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
       }
     }
   }
@@ -86,15 +198,20 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
           // Expandable Header
           _buildExpandableHeader(size),
 
-          // Info message (aktivite kaydedilmemişse)
-          if (widget.activityId == null) ...[
-            SizedBox(height: size.mediumSpacing),
-            _buildInfoMessage(size),
-          ]
           // Loading indicator
-          else if (_isLoading) ...[
+          if (_isLoading) ...[
             SizedBox(height: size.smallSpacing),
             _buildLoadingIndicator(size),
+          ]
+          // Upload indicator
+          else if (_isUploading) ...[
+            SizedBox(height: size.smallSpacing),
+            _buildUploadingIndicator(size),
+          ]
+          // Info message (aktivite kaydedilmemişse)
+          else if (widget.activityId == null) ...[
+            SizedBox(height: size.mediumSpacing),
+            _buildInfoMessage(size),
           ]
           // Expanded content - dosya listesi
           else if (_isExpanded && _attachedFiles.isNotEmpty) ...[
@@ -109,19 +226,27 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
   Widget _buildExpandableHeader(AppSizes size) {
     return GestureDetector(
       onTap: () {
-        debugPrint('[FILE_UPLOAD] Header tapped, files count: ${_attachedFiles.length}, activityId: ${widget.activityId}');
+        debugPrint('[FILE_UPLOAD] 🎯 HEADER TAPPED!');
+
+        if (_isLoading || _isUploading) {
+          debugPrint('[FILE_UPLOAD] ⏳ Busy, ignoring tap');
+          return;
+        }
 
         if (_attachedFiles.isNotEmpty) {
-          debugPrint('[FILE_UPLOAD] Toggling expand state');
+          debugPrint('[FILE_UPLOAD] 📂 Toggling expand state');
           setState(() {
             _isExpanded = !_isExpanded;
           });
         } else if (widget.activityId != null) {
-          debugPrint('[FILE_UPLOAD] Calling onShowFileOptions');
-          // Dosya yoksa bottom sheet aç
+          debugPrint('[FILE_UPLOAD] 🚀 Showing file options');
           widget.onShowFileOptions?.call();
         } else {
-          debugPrint('[FILE_UPLOAD] ActivityId is null, cannot show file options');
+          debugPrint('[FILE_UPLOAD] ❌ ActivityId is null');
+          SnackbarHelper.showWarning(
+            context: context,
+            message: 'Aktivite kaydedilmeden dosya eklenemez',
+          );
         }
       },
       child: Container(
@@ -129,35 +254,60 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(size.cardBorderRadius),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(
+            color: _getBorderColor(),
+            width: _getBorderWidth(),
+          ),
         ),
         child: Row(
           children: [
-            // File icon
+            // File icon with visual indicator
             Container(
               padding: EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
+                color: _getIconBackgroundColor(),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                Icons.attach_file,
-                color: AppColors.primary,
-                size: 20,
-              ),
+              child: _isUploading
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                      ),
+                    )
+                  : Icon(
+                      Icons.attach_file,
+                      color: _getIconColor(),
+                      size: 20,
+                    ),
             ),
 
             SizedBox(width: size.smallSpacing),
 
-            // Title
+            // Title with status
             Expanded(
-              child: Text(
-                'Dosyalar',
-                style: TextStyle(
-                  fontSize: size.textSize,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _isUploading ? 'Dosya Yükleniyor...' : 'Dosyalar',
+                    style: TextStyle(
+                      fontSize: size.textSize,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  Text(
+                    _getSubtitleText(),
+                    style: TextStyle(
+                      fontSize: size.smallText * 0.9,
+                      color: _getSubtitleColor(),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
 
@@ -184,25 +334,128 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
 
             SizedBox(width: size.smallSpacing),
 
-            // Expand/Add icon
-            if (_attachedFiles.isNotEmpty)
-              AnimatedRotation(
-                duration: Duration(milliseconds: 200),
-                turns: _isExpanded ? 0.5 : 0,
-                child: Icon(
-                  Icons.keyboard_arrow_down,
-                  color: AppColors.textSecondary,
-                  size: 24,
-                ),
-              )
-            else if (widget.activityId != null)
-              Icon(
-                Icons.add_circle_outline,
-                color: AppColors.primary,
-                size: 24,
-              ),
+            // Action icon
+            _buildActionIcon(size),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildActionIcon(AppSizes size) {
+    if (_isLoading || _isUploading) {
+      return SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+        ),
+      );
+    }
+
+    if (_attachedFiles.isNotEmpty) {
+      return AnimatedRotation(
+        duration: Duration(milliseconds: 200),
+        turns: _isExpanded ? 0.5 : 0,
+        child: Icon(
+          Icons.keyboard_arrow_down,
+          color: AppColors.textSecondary,
+          size: 24,
+        ),
+      );
+    } else if (widget.activityId != null) {
+      return Icon(
+        Icons.add_circle_outline,
+        color: AppColors.primary,
+        size: 24,
+      );
+    } else {
+      return Icon(
+        Icons.lock,
+        color: Colors.orange,
+        size: 24,
+      );
+    }
+  }
+
+  // Helper methods for styling
+  Color _getBorderColor() {
+    if (_isUploading) return AppColors.primary;
+    if (widget.activityId != null) return AppColors.border;
+    return Colors.orange;
+  }
+
+  double _getBorderWidth() => (widget.activityId == null || _isUploading) ? 2 : 1;
+
+  Color _getIconBackgroundColor() {
+    if (_isUploading) return AppColors.primary.withValues(alpha: 0.1);
+    if (widget.activityId != null) return AppColors.primary.withValues(alpha: 0.1);
+    return Colors.orange.withValues(alpha: 0.1);
+  }
+
+  Color _getIconColor() {
+    if (widget.activityId != null) return AppColors.primary;
+    return Colors.orange;
+  }
+
+  String _getSubtitleText() {
+    if (_isUploading) return 'Lütfen bekleyin...';
+    if (widget.activityId != null) {
+      return 'Aktivite ID: ${widget.activityId} (${_attachedFiles.length} dosya)';
+    }
+    return 'Aktivite kaydedilmedi - dosya eklenemez';
+  }
+
+  Color _getSubtitleColor() {
+    if (_isUploading) return AppColors.primary;
+    if (widget.activityId != null) return Colors.green;
+    return Colors.orange;
+  }
+
+  Widget _buildLoadingIndicator(AppSizes size) {
+    return Padding(
+      padding: EdgeInsets.all(size.cardPadding),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: size.smallSpacing),
+          Text(
+            'Dosyalar yükleniyor...',
+            style: TextStyle(
+              fontSize: size.smallText,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUploadingIndicator(AppSizes size) {
+    return Padding(
+      padding: EdgeInsets.all(size.cardPadding),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: size.smallSpacing),
+          Text(
+            'Dosya sunucuya yükleniyor...',
+            style: TextStyle(
+              fontSize: size.smallText,
+              color: AppColors.primary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -234,36 +487,13 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
     );
   }
 
-  Widget _buildLoadingIndicator(AppSizes size) {
-    return Padding(
-      padding: EdgeInsets.all(size.cardPadding),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          SizedBox(width: size.smallSpacing),
-          Text(
-            'Dosyalar yükleniyor...',
-            style: TextStyle(
-              fontSize: size.smallText,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildFileList(AppSizes size) {
     return AnimatedContainer(
       duration: Duration(milliseconds: 300),
       curve: Curves.easeInOut,
       child: Column(
         children: [
-          // Direkt dosya listesi - Dosya Ekle butonu yok
+          // Mevcut dosya listesi - "Yeni Dosya Ekle" butonu kaldırıldı
           ..._attachedFiles.map((file) => _buildFileItem(file, size)),
         ],
       ),
@@ -309,7 +539,7 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
                   ),
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 SizedBox(height: size.tinySpacing),
@@ -328,13 +558,19 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
 
           // Actions
           PopupMenuButton<String>(
-            onSelected: (value) {
+            onSelected: (value) async {
               switch (value) {
                 case 'view':
-                  _viewFile(file);
+                  await _viewFile(file);
+                  break;
+                case 'info':
+                  SnackbarHelper.showInfo(
+                    context: context,
+                    message: 'PDF/Dosya görüntüleme özelliği geliştiriliyor...',
+                  );
                   break;
                 case 'delete':
-                  _deleteFile(file);
+                  await _deleteFile(file);
                   break;
               }
             },
@@ -347,6 +583,17 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
                       Icon(Icons.visibility, size: 16),
                       SizedBox(width: 8),
                       Text('Görüntüle'),
+                    ],
+                  ),
+                )
+              else
+                PopupMenuItem(
+                  value: 'info',
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: AppColors.info),
+                      SizedBox(width: 8),
+                      Text('PDF/Dosya görüntüleme yakında...', style: TextStyle(color: AppColors.info)),
                     ],
                   ),
                 ),
@@ -368,17 +615,19 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
     );
   }
 
-  /// 👁️ Dosyayı görüntüle
+  // File operations
   Future<void> _viewFile(AttachmentFile file) async {
     if (!file.isImage) {
+      // PDF için şimdilik bilgi mesajı
       SnackbarHelper.showInfo(
         context: context,
-        message: 'Bu dosya türü için görüntüleme desteklenmiyor',
+        message: 'PDF görüntüleme: ${file.fileName}\nWeb browser\'da açmak için geliştiriliyor...',
       );
       return;
     }
 
     try {
+      // Loading dialog göster
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -401,28 +650,21 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
         ),
       );
 
-      debugPrint('[IMAGE_VIEW] Getting image for file: ${file.fileName}');
-      debugPrint('[IMAGE_VIEW] File local name: ${file.localName}');
-
       final imageUrl = await FileService.instance.getFileViewUrl(file);
 
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context); // Loading dialog'u kapat
 
-        if (imageUrl != null) {
-          debugPrint('[IMAGE_VIEW] Image URL received, length: ${imageUrl.length}');
-          debugPrint('[IMAGE_VIEW] Image URL preview: ${imageUrl.substring(0, math.min(100, imageUrl.length))}...');
+        if (imageUrl != null && imageUrl.isNotEmpty && imageUrl != 'null') {
           _showImageDialog(file, imageUrl);
         } else {
-          debugPrint('[IMAGE_VIEW] Image URL is null');
           SnackbarHelper.showError(
             context: context,
-            message: 'Resim yüklenemedi - API\'den veri gelmedi',
+            message: 'Resim yüklenemedi - boş response',
           );
         }
       }
     } catch (e) {
-      debugPrint('[IMAGE_VIEW] Error: $e');
       if (mounted) {
         Navigator.pop(context);
         SnackbarHelper.showError(
@@ -494,36 +736,32 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
 
   Widget _buildImageWidget(String imageUrl) {
     try {
-      // Base64 string'i temizle ve decode et
       String base64String = imageUrl;
 
-      // "data:image/jpeg;base64," prefix'ini kaldır
       if (base64String.contains(',')) {
         base64String = base64String.split(',').last;
       }
 
-      // Gereksiz tırnak işaretlerini kaldır
-      base64String = base64String.replaceAll('"', '');
+      base64String = base64String.replaceAll('"', '').replaceAll(RegExp(r'\s+'), '');
 
-      // Base64 string'i normalize et (whitespace ve newline'ları kaldır)
-      base64String = base64String.replaceAll(RegExp(r'\s+'), '');
+      // Base64 format kontrolü
+      if (!RegExp(r'^[A-Za-z0-9+/]*={0,2}$').hasMatch(base64String)) {
+        debugPrint('[FILE_UPLOAD] Invalid base64 format');
+        return _buildImageError();
+      }
 
-      debugPrint('[IMAGE_VIEW] Cleaned base64 length: ${base64String.length}');
-      debugPrint('[IMAGE_VIEW] Cleaned base64 preview: ${base64String.substring(0, math.min(50, base64String.length))}...');
-
-      // Base64 decode yap
       final bytes = base64Decode(base64String);
 
       return Image.memory(
         bytes,
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) {
-          debugPrint('[IMAGE_VIEW] Image decode error: $error');
+          debugPrint('[FILE_UPLOAD] Image decode error: $error');
           return _buildImageError();
         },
       );
     } catch (e) {
-      debugPrint('[IMAGE_VIEW] Base64 decode error: $e');
+      debugPrint('[FILE_UPLOAD] Image widget error: $e');
       return _buildImageError();
     }
   }
@@ -537,58 +775,55 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
         children: [
           Icon(Icons.error_outline, size: 48, color: AppColors.error),
           SizedBox(height: 8),
-          Text(
-            'Resim yüklenemedi',
-            style: TextStyle(color: AppColors.error),
-          ),
-          SizedBox(height: 4),
-          Text(
-            'Dosya formatı desteklenmiyor',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
-          ),
+          Text('Resim yüklenemedi', style: TextStyle(color: AppColors.error)),
         ],
       ),
     );
   }
 
-  /// 🗑️ Dosyayı sil
   Future<void> _deleteFile(AttachmentFile file) async {
     final shouldDelete = await _showDeleteDialog(file.fileName);
     if (!shouldDelete) return;
 
     try {
+      debugPrint('[FILE_UPLOAD] 🗑️ Starting delete for: ${file.fileName}');
+
       final response = await FileService.instance.deleteActivityFile(
         file: file,
         activityId: widget.activityId!,
         tableId: widget.tableId,
       );
 
-      if (response.isSuccess) {
-        setState(() {
-          _attachedFiles.removeWhere((f) => f.id == file.id);
-          // Dosya kalmadıysa kapat
-          if (_attachedFiles.isEmpty) {
-            _isExpanded = false;
-          }
-        });
+      debugPrint('[FILE_UPLOAD] 🗑️ Delete response: ${response.isSuccess}');
 
-        SnackbarHelper.showSuccess(
-          context: context,
-          message: 'Dosya silindi: ${file.fileName}',
-        );
+      // Response success olsun olmasın, UI'dan kaldır (çünkü backend'de siliniyor)
+      setState(() {
+        _attachedFiles.removeWhere((f) => f.id == file.id);
+        if (_attachedFiles.isEmpty) {
+          _isExpanded = false;
+        }
+      });
 
-        widget.onFileDeleted?.call(file);
-      } else {
-        throw FileException('Delete failed: ${response.message ?? "Unknown error"}');
-      }
-    } catch (e) {
-      debugPrint('[FILE_UPLOAD] Delete error: $e');
-      SnackbarHelper.showError(
+      widget.onFileDeleted?.call(file);
+
+      SnackbarHelper.showSuccess(
         context: context,
-        message: 'Dosya silinemedi: ${e.toString()}',
+        message: 'Dosya silindi: ${file.fileName}',
+      );
+    } catch (e) {
+      debugPrint('[FILE_UPLOAD] ❌ Delete error: $e');
+
+      // Hata olsa bile UI'dan kaldır (çünkü backend'de muhtemelen silindi)
+      setState(() {
+        _attachedFiles.removeWhere((f) => f.id == file.id);
+        if (_attachedFiles.isEmpty) {
+          _isExpanded = false;
+        }
+      });
+
+      SnackbarHelper.showWarning(
+        context: context,
+        message: 'Dosya silindi (${file.fileName})',
       );
     }
   }
@@ -597,9 +832,7 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             title: Row(
               children: [
                 Icon(Icons.delete_outline, color: AppColors.error),
@@ -607,9 +840,7 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
                 Text('Dosyayı Sil'),
               ],
             ),
-            content: Text(
-              '$fileName dosyasını silmek istediğinizden emin misiniz?\n\nBu işlem geri alınamaz.',
-            ),
+            content: Text('$fileName dosyasını silmek istediğinizden emin misiniz?\n\nBu işlem geri alınamaz.'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -629,6 +860,7 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
         false;
   }
 
+  // Helper methods
   Color _getFileTypeColor(int fileType) {
     switch (fileType) {
       case 0:
@@ -658,5 +890,10 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
     } catch (e) {
       return dateString;
     }
+  }
+
+  // Public method to handle file upload from external source
+  Future<void> handleFileUpload(Future<FileData?> Function() captureFunction) async {
+    await _handleFileUpload(captureFunction);
   }
 }

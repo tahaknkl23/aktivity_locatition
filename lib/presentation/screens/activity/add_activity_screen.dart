@@ -1,4 +1,4 @@
-// lib/presentation/screens/activity/add_activity_screen.dart
+// lib/presentation/screens/activity/add_activity_screen.dart - DÜZELTME
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
@@ -340,10 +340,18 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
   }
 
   // ================
-  // FILE METHODS
+  // FILE METHODS - DÜZELTME
   // ================
 
   void _showFileOptions() {
+    if (savedActivityId == null) {
+      SnackbarHelper.showWarning(
+        context: context,
+        message: 'Aktivite kaydedilmeden dosya eklenemez',
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       shape: RoundedRectangleBorder(
@@ -373,6 +381,7 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
   }
 
+  /// 📤 GERÇEK UPLOAD İMPLEMENTASYONU
   Future<void> _uploadFile(FileData fileData) async {
     if (savedActivityId == null) {
       SnackbarHelper.showError(
@@ -383,30 +392,51 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
 
     try {
-      // TODO: FileService.instance.uploadActivityFile implementasyonunu kontrol et
-      final mockFile = AttachmentFile(
-        id: DateTime.now().millisecondsSinceEpoch,
-        fileName: fileData.name,
-        localName: fileData.name,
-        fileType: fileData.isImage ? 0 : 1,
-        createdUserName: 'Current User',
-        createdDate: DateTime.now().toIso8601String(),
-        formName: 'Aktivite',
-      );
+      debugPrint('[ADD_ACTIVITY] 🚀 Starting real upload: ${fileData.name}');
 
-      setState(() {
-        _attachedFiles.add(mockFile);
-      });
-
-      SnackbarHelper.showSuccess(
+      // Progress göster
+      SnackbarHelper.showInfo(
         context: context,
-        message: 'Dosya eklendi (API bağlantısı gerekli)',
+        message: 'Dosya yükleniyor: ${fileData.name}',
       );
+
+      // Gerçek upload
+      final response = await FileService.instance.uploadActivityFile(
+        activityId: savedActivityId!,
+        file: fileData,
+        tableId: 102,
+      );
+
+      if (response.isSuccess && response.firstFile != null) {
+        // State'e ekle
+        setState(() {
+          _attachedFiles.add(response.firstFile!);
+        });
+
+        SnackbarHelper.showSuccess(
+          context: context,
+          message: 'Dosya başarıyla yüklendi: ${fileData.name}',
+        );
+
+        debugPrint('[ADD_ACTIVITY] ✅ Upload successful: ${response.firstFile!.fileName}');
+      } else {
+        throw FileException(response.errorMessage ?? 'Upload failed');
+      }
     } catch (e) {
-      debugPrint('[ADD_ACTIVITY] Upload error: $e');
+      debugPrint('[ADD_ACTIVITY] ❌ Upload error: $e');
+
+      String errorMsg = 'Dosya yüklenemedi';
+      if (e is FileException) {
+        errorMsg = e.message;
+      } else if (e.toString().contains('SocketException')) {
+        errorMsg = 'İnternet bağlantısı hatası';
+      } else if (e.toString().contains('TimeoutException')) {
+        errorMsg = 'Yükleme zaman aşımı';
+      }
+
       SnackbarHelper.showError(
         context: context,
-        message: 'Dosya yüklenemedi: ${e.toString()}',
+        message: errorMsg,
       );
     }
   }

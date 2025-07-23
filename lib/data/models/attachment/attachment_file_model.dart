@@ -1,4 +1,4 @@
-// lib/data/models/attachment/attachment_file_model.dart - WEB API UYUMLU
+// lib/data/models/attachment/attachment_file_model.dart - TEMİZLENMİŞ VERSİYON
 import 'package:flutter/material.dart';
 
 /// 📎 Ek dosya modeli - Web API response'una uygun
@@ -27,7 +27,7 @@ class AttachmentFile {
     this.formId,
   });
 
-  // 🎯 GetFiles API response'u için (Data array içindeki objeler)
+  /// 🎯 GetFiles API response'u için (Data array içindeki objeler)
   factory AttachmentFile.fromJson(Map<String, dynamic> json) {
     return AttachmentFile(
       id: json['Id'] ?? 0,
@@ -43,14 +43,30 @@ class AttachmentFile {
     );
   }
 
-  // 🎯 UploadFile API response'u için (Attachments array içindeki objeler)
+  /// 🎯 UploadFile API response'u için (Attachments array içindeki objeler)
   factory AttachmentFile.fromUploadResponse(Map<String, dynamic> json) {
     return AttachmentFile(
       id: json['Id'] ?? 0,
       fileName: json['FileName'] ?? '',
       localName: json['LocalName'] ?? '',
       fileType: json['FileType'] ?? 0,
-      createdUserName: '', // Upload response'da CreatedUserName yok
+      createdUserName: 'Current User', // Upload response'da CreatedUserName yok
+      createdDate: json['CreatedDate'] ?? DateTime.now().toIso8601String(),
+      formName: json['FormName'] ?? 'Aktivite',
+      tableId: json['TableId'],
+      recordId: json['RecordId'],
+      formId: json['FormId'],
+    );
+  }
+
+  /// 🎯 GetFiles liste response'u için (mobil uyumlu)
+  factory AttachmentFile.fromListJson(Map<String, dynamic> json) {
+    return AttachmentFile(
+      id: json['Id'] ?? 0,
+      fileName: json['FileName'] ?? '',
+      localName: json['LocalName'] ?? '',
+      fileType: json['FileType'] ?? 0,
+      createdUserName: json['CreatedUserName'] ?? '',
       createdDate: json['CreatedDate'] ?? '',
       formName: json['FormName'] ?? '',
       tableId: json['TableId'],
@@ -59,6 +75,7 @@ class AttachmentFile {
     );
   }
 
+  /// ✅ File type helpers
   bool get isImage => fileType == 0;
   bool get isDocument => fileType == 1;
 
@@ -67,15 +84,14 @@ class AttachmentFile {
       case 0:
         return 'Resim';
       case 1:
-        return 'Doküman';
+        return 'Belge';
       default:
-        return 'Bilinmeyen';
+        return 'Dosya';
     }
   }
 
   /// 📱 Mobile için display formatı
   String get displayFileName {
-    // Uzun dosya adlarını kısalt
     if (fileName.length > 30) {
       final extension = fileName.split('.').last;
       final nameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.'));
@@ -90,7 +106,6 @@ class AttachmentFile {
       final date = DateTime.parse(createdDate);
       return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
     } catch (e) {
-      // Eğer parse edilemezse, orijinal string'i döndür
       return createdDate;
     }
   }
@@ -139,42 +154,53 @@ class AttachmentFile {
     return 'AttachmentFile(id: $id, fileName: $fileName, fileType: $fileType)';
   }
 
-  /// 📋 Copy with method
-  AttachmentFile copyWith({
-    int? id,
-    String? fileName,
-    String? localName,
-    int? fileType,
-    String? createdUserName,
-    String? createdDate,
-    String? formName,
-    int? tableId,
-    int? recordId,
-    int? formId,
-  }) {
-    return AttachmentFile(
-      id: id ?? this.id,
-      fileName: fileName ?? this.fileName,
-      localName: localName ?? this.localName,
-      fileType: fileType ?? this.fileType,
-      createdUserName: createdUserName ?? this.createdUserName,
-      createdDate: createdDate ?? this.createdDate,
-      formName: formName ?? this.formName,
-      tableId: tableId ?? this.tableId,
-      recordId: recordId ?? this.recordId,
-      formId: formId ?? this.formId,
-    );
-  }
-
   /// ⚖️ Equality check
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-    return other is AttachmentFile && other.id == id && other.fileName == fileName && other.localName == localName;
+    return other is AttachmentFile && other.id == id && other.localName == localName;
   }
 
   @override
-  int get hashCode => Object.hash(id, fileName, localName);
+  int get hashCode => Object.hash(id, localName);
+}
+
+/// 📤 Upload response modeli
+class AttachmentUploadResponse {
+  final bool status;
+  final List<AttachmentFile> attachments;
+  final String? errorMessage;
+
+  AttachmentUploadResponse({
+    required this.status,
+    required this.attachments,
+    this.errorMessage,
+  });
+
+  factory AttachmentUploadResponse.fromJson(Map<String, dynamic> json) {
+    try {
+      final status = json['Status'] as bool? ?? false;
+      final attachmentsJson = json['Attachments'] as List<dynamic>? ?? [];
+
+      final attachments = attachmentsJson.map((item) => AttachmentFile.fromUploadResponse(item as Map<String, dynamic>)).toList();
+
+      return AttachmentUploadResponse(
+        status: status,
+        attachments: attachments,
+        errorMessage: status ? null : 'Upload failed',
+      );
+    } catch (e) {
+      debugPrint('[ATTACHMENT] Upload response parse error: $e');
+      return AttachmentUploadResponse(
+        status: false,
+        attachments: [],
+        errorMessage: 'Parse error: ${e.toString()}',
+      );
+    }
+  }
+
+  bool get isSuccess => status && attachments.isNotEmpty;
+  AttachmentFile? get firstFile => attachments.isNotEmpty ? attachments.first : null;
 }
 
 /// 📁 Dosya listesi response modeli
@@ -192,15 +218,23 @@ class AttachmentFileListResponse {
   });
 
   factory AttachmentFileListResponse.fromJson(Map<String, dynamic> json) {
-    final dataList = json['Data'] as List<dynamic>? ?? [];
-    final files = dataList.map((item) => AttachmentFile.fromJson(item as Map<String, dynamic>)).toList();
+    try {
+      final dataList = json['Data'] as List<dynamic>? ?? [];
+      final files = dataList.map((item) => AttachmentFile.fromJson(item as Map<String, dynamic>)).toList();
 
-    return AttachmentFileListResponse(
-      data: files,
-      total: json['Total'] as int? ?? 0,
-      aggregates: json['Aggregates'] as Map<String, dynamic>?,
-      errors: (json['Errors'] as List<dynamic>?)?.cast<String>(),
-    );
+      return AttachmentFileListResponse(
+        data: files,
+        total: json['Total'] as int? ?? 0,
+        aggregates: json['Aggregates'] as Map<String, dynamic>?,
+        errors: (json['Errors'] as List<dynamic>?)?.cast<String>(),
+      );
+    } catch (e) {
+      debugPrint('[ATTACHMENT] File list response parse error: $e');
+      return AttachmentFileListResponse(
+        data: [],
+        total: 0,
+      );
+    }
   }
 
   bool get hasErrors => errors != null && errors!.isNotEmpty;
@@ -208,58 +242,48 @@ class AttachmentFileListResponse {
   bool get isNotEmpty => data.isNotEmpty;
 }
 
-/// 📤 Upload response modeli
-class AttachmentUploadResponse {
-  final bool status;
-  final List<AttachmentFile> attachments;
-  final String? errorMessage;
-
-  AttachmentUploadResponse({
-    required this.status,
-    required this.attachments,
-    this.errorMessage,
-  });
-
-  factory AttachmentUploadResponse.fromJson(Map<String, dynamic> json) {
-    final attachmentsList = json['Attachments'] as List<dynamic>? ?? [];
-    final files = attachmentsList.map((item) => AttachmentFile.fromUploadResponse(item as Map<String, dynamic>)).toList();
-
-    return AttachmentUploadResponse(
-      status: json['Status'] as bool? ?? false,
-      attachments: files,
-      errorMessage: json['ErrorMessage'] as String?,
-    );
-  }
-
-  bool get isSuccess => status && errorMessage == null;
-  bool get hasFiles => attachments.isNotEmpty;
-  AttachmentFile? get firstFile => attachments.isNotEmpty ? attachments.first : null;
-}
-
 /// 🗑️ Delete response modeli
 class AttachmentDeleteResponse {
-  final String status;
+  final bool isSuccess;
   final String? message;
 
   AttachmentDeleteResponse({
-    required this.status,
+    required this.isSuccess,
     this.message,
   });
 
   factory AttachmentDeleteResponse.fromJson(Map<String, dynamic> json) {
-    return AttachmentDeleteResponse(
-      status: json['Status'] as String? ?? '',
-      message: json['Message'] as String?,
-    );
-  }
+    try {
+      // API'den gelen response formatına göre ayarla
+      bool success = false;
 
-  bool get isSuccess => status.toLowerCase() == 'success';
+      if (json.containsKey('Success')) {
+        success = json['Success'] as bool? ?? false;
+      } else if (json.containsKey('Status')) {
+        success = json['Status'] as bool? ?? false;
+      } else {
+        // Eğer özel field yoksa, HTTP 200 = success kabul et
+        success = true;
+      }
+
+      return AttachmentDeleteResponse(
+        isSuccess: success,
+        message: json['Message'] as String? ?? json['ErrorMessage'] as String?,
+      );
+    } catch (e) {
+      debugPrint('[ATTACHMENT] Delete response parse error: $e');
+      return AttachmentDeleteResponse(
+        isSuccess: false,
+        message: 'Parse error: ${e.toString()}',
+      );
+    }
+  }
 }
 
 /// 📁 Dosya türü enum'u
 enum AttachmentFileType {
   image(0, 'Resim', Icons.image, Colors.green),
-  document(1, 'Doküman', Icons.description, Colors.blue);
+  document(1, 'Belge', Icons.description, Colors.blue);
 
   const AttachmentFileType(this.value, this.label, this.icon, this.color);
 
@@ -299,12 +323,6 @@ class AttachmentException implements Exception {
 
 /// 📱 Mobile UI için helper extension'lar
 extension AttachmentFileExtensions on AttachmentFile {
-  /// Dosya boyutu human-readable format
-  String get formattedFileSize {
-    // Web'den gelen response'da file size yok, bu durumda placeholder
-    return 'Boyut bilgisi yok';
-  }
-
   /// Preview için uygun mu?
   bool get canPreview => isImage;
 
@@ -313,4 +331,7 @@ extension AttachmentFileExtensions on AttachmentFile {
 
   /// Share için uygun mu?
   bool get canShare => isImage || isDocument;
+
+  /// Dosya boyutu placeholder (web'den size bilgisi gelmiyor)
+  String get formattedFileSize => 'Boyut bilgisi mevcut değil';
 }
