@@ -1,5 +1,6 @@
-// lib/presentation/widgets/common/file_upload_widget.dart - MOBİLE UYUMLUwww.dart
+// lib/presentation/widgets/common/file_upload_widget.dart - Expandable Liste
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -12,15 +13,15 @@ class FileUploadWidget extends StatefulWidget {
   final int? tableId;
   final Function(AttachmentFile)? onFileUploaded;
   final Function(AttachmentFile)? onFileDeleted;
-  final bool showUploadButton;
+  final Function()? onShowFileOptions;
 
   const FileUploadWidget({
     super.key,
     this.activityId,
-    this.tableId = 102, // Activity table ID
+    this.tableId = 102,
     this.onFileUploaded,
     this.onFileDeleted,
-    this.showUploadButton = true,
+    this.onShowFileOptions,
   });
 
   @override
@@ -29,8 +30,8 @@ class FileUploadWidget extends StatefulWidget {
 
 class _FileUploadWidgetState extends State<FileUploadWidget> {
   final List<AttachmentFile> _attachedFiles = [];
-  bool _isUploading = false;
   bool _isLoading = true;
+  bool _isExpanded = false; // Expand/collapse state
 
   @override
   void initState() {
@@ -59,6 +60,8 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
           _attachedFiles.clear();
           _attachedFiles.addAll(response.data);
           _isLoading = false;
+          // Dosya varsa da kapalı başla - kullanıcı isterse açar
+          _isExpanded = false;
         });
 
         debugPrint('[FILE_UPLOAD] Loaded ${_attachedFiles.length} existing files');
@@ -67,10 +70,6 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
       debugPrint('[FILE_UPLOAD] Load files error: $e');
       if (mounted) {
         setState(() => _isLoading = false);
-        SnackbarHelper.showError(
-          context: context,
-          message: 'Dosyalar yüklenemedi: ${e.toString()}',
-        );
       }
     }
   }
@@ -84,152 +83,127 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
-          _buildHeader(size),
-
-          SizedBox(height: size.mediumSpacing),
-
-          // Upload buttons (sadece aktivite kaydedildikten sonra)
-          if (widget.activityId != null && widget.showUploadButton) _buildUploadButtons(size),
+          // Expandable Header
+          _buildExpandableHeader(size),
 
           // Info message (aktivite kaydedilmemişse)
-          if (widget.activityId == null) _buildInfoMessage(size),
-
-          // Loading indicator
-          if (_isLoading) ...[
+          if (widget.activityId == null) ...[
             SizedBox(height: size.mediumSpacing),
+            _buildInfoMessage(size),
+          ]
+          // Loading indicator
+          else if (_isLoading) ...[
+            SizedBox(height: size.smallSpacing),
             _buildLoadingIndicator(size),
           ]
-          // File list
-          else if (_attachedFiles.isNotEmpty) ...[
-            SizedBox(height: size.mediumSpacing),
+          // Expanded content - dosya listesi
+          else if (_isExpanded && _attachedFiles.isNotEmpty) ...[
+            SizedBox(height: size.smallSpacing),
             _buildFileList(size),
-          ]
-          // Empty state
-          else if (widget.activityId != null) ...[
-            SizedBox(height: size.mediumSpacing),
-            _buildEmptyState(size),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildHeader(AppSizes size) {
-    return Row(
-      children: [
-        Container(
-          padding: EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            Icons.attach_file,
-            color: AppColors.primary,
-            size: 20,
-          ),
-        ),
-        SizedBox(width: size.smallSpacing),
-        Expanded(
-          child: Text(
-            'Dosyalar',
-            style: TextStyle(
-              fontSize: size.textSize,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-        ),
-        if (_attachedFiles.isNotEmpty)
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: size.smallSpacing,
-              vertical: size.tinySpacing,
-            ),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              '${_attachedFiles.length}',
-              style: TextStyle(
-                fontSize: size.smallText,
-                color: AppColors.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
+  Widget _buildExpandableHeader(AppSizes size) {
+    return GestureDetector(
+      onTap: () {
+        debugPrint('[FILE_UPLOAD] Header tapped, files count: ${_attachedFiles.length}, activityId: ${widget.activityId}');
 
-  Widget _buildUploadButtons(AppSizes size) {
-    return Column(
-      children: [
-        // İlk satır: Kamera ve Galeri
-        Row(
+        if (_attachedFiles.isNotEmpty) {
+          debugPrint('[FILE_UPLOAD] Toggling expand state');
+          setState(() {
+            _isExpanded = !_isExpanded;
+          });
+        } else if (widget.activityId != null) {
+          debugPrint('[FILE_UPLOAD] Calling onShowFileOptions');
+          // Dosya yoksa bottom sheet aç
+          widget.onShowFileOptions?.call();
+        } else {
+          debugPrint('[FILE_UPLOAD] ActivityId is null, cannot show file options');
+        }
+      },
+      child: Container(
+        padding: EdgeInsets.all(size.cardPadding),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(size.cardBorderRadius),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
           children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _isUploading ? null : _capturePhoto,
-                icon: _isUploading
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(Icons.camera_alt, size: 18),
-                label: Text(
-                  _isUploading ? 'Yükleniyor...' : 'Fotoğraf Çek',
-                  style: TextStyle(fontSize: size.smallText),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: AppColors.primary),
-                  foregroundColor: AppColors.primary,
-                  padding: EdgeInsets.symmetric(vertical: size.smallSpacing),
-                ),
+            // File icon
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.attach_file,
+                color: AppColors.primary,
+                size: 20,
               ),
             ),
+
             SizedBox(width: size.smallSpacing),
+
+            // Title
             Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _isUploading ? null : _pickFromGallery,
-                icon: Icon(Icons.photo_library, size: 18),
-                label: Text(
-                  'Galeri',
-                  style: TextStyle(fontSize: size.smallText),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: AppColors.secondary),
-                  foregroundColor: AppColors.secondary,
-                  padding: EdgeInsets.symmetric(vertical: size.smallSpacing),
+              child: Text(
+                'Dosyalar',
+                style: TextStyle(
+                  fontSize: size.textSize,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ),
+
+            // Count badge
+            if (_attachedFiles.isNotEmpty)
+              Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: size.smallSpacing,
+                  vertical: size.tinySpacing,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_attachedFiles.length}',
+                  style: TextStyle(
+                    fontSize: size.smallText,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+
+            SizedBox(width: size.smallSpacing),
+
+            // Expand/Add icon
+            if (_attachedFiles.isNotEmpty)
+              AnimatedRotation(
+                duration: Duration(milliseconds: 200),
+                turns: _isExpanded ? 0.5 : 0,
+                child: Icon(
+                  Icons.keyboard_arrow_down,
+                  color: AppColors.textSecondary,
+                  size: 24,
+                ),
+              )
+            else if (widget.activityId != null)
+              Icon(
+                Icons.add_circle_outline,
+                color: AppColors.primary,
+                size: 24,
+              ),
           ],
         ),
-
-        SizedBox(height: size.smallSpacing),
-
-        // İkinci satır: Dosya seç
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _isUploading ? null : _pickFile,
-            icon: Icon(Icons.description, size: 18),
-            label: Text(
-              'Dosya Seç',
-              style: TextStyle(fontSize: size.smallText),
-            ),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(color: AppColors.info),
-              foregroundColor: AppColors.info,
-              padding: EdgeInsets.symmetric(vertical: size.smallSpacing),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -261,62 +235,21 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
   }
 
   Widget _buildLoadingIndicator(AppSizes size) {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(size.cardPadding),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            SizedBox(width: size.smallSpacing),
-            Text(
-              'Dosyalar yükleniyor...',
-              style: TextStyle(
-                fontSize: size.smallText,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(AppSizes size) {
-    return Container(
-      padding: EdgeInsets.all(size.cardPadding * 1.5),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(size.cardBorderRadius),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
+    return Padding(
+      padding: EdgeInsets.all(size.cardPadding),
+      child: Row(
         children: [
-          Icon(
-            Icons.file_present,
-            size: 48,
-            color: AppColors.textTertiary,
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          SizedBox(height: size.smallSpacing),
+          SizedBox(width: size.smallSpacing),
           Text(
-            'Henüz dosya eklenmemiş',
-            style: TextStyle(
-              fontSize: size.textSize,
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          SizedBox(height: size.tinySpacing),
-          Text(
-            'Fotoğraf çekmek veya dosya eklemek için yukarıdaki butonları kullanın',
-            textAlign: TextAlign.center,
+            'Dosyalar yükleniyor...',
             style: TextStyle(
               fontSize: size.smallText,
-              color: AppColors.textTertiary,
+              color: AppColors.textSecondary,
             ),
           ),
         ],
@@ -325,8 +258,15 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
   }
 
   Widget _buildFileList(AppSizes size) {
-    return Column(
-      children: _attachedFiles.map((file) => _buildFileItem(file, size)).toList(),
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      child: Column(
+        children: [
+          // Direkt dosya listesi - Dosya Ekle butonu yok
+          ..._attachedFiles.map((file) => _buildFileItem(file, size)),
+        ],
+      ),
     );
   }
 
@@ -335,23 +275,23 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
       margin: EdgeInsets.only(bottom: size.smallSpacing),
       padding: EdgeInsets.all(size.cardPadding),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.background,
         borderRadius: BorderRadius.circular(size.cardBorderRadius),
         border: Border.all(color: AppColors.border),
       ),
       child: Row(
         children: [
-          // File icon
+          // File type icon
           Container(
-            padding: EdgeInsets.all(8),
+            padding: EdgeInsets.all(6),
             decoration: BoxDecoration(
               color: _getFileTypeColor(file.fileType).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
               _getFileTypeIcon(file.fileType),
               color: _getFileTypeColor(file.fileType),
-              size: 20,
+              size: 16,
             ),
           ),
 
@@ -365,7 +305,7 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
                 Text(
                   file.fileName,
                   style: TextStyle(
-                    fontSize: size.textSize,
+                    fontSize: size.smallText,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
                   ),
@@ -373,36 +313,14 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 SizedBox(height: size.tinySpacing),
-                Row(
-                  children: [
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: _getFileTypeColor(file.fileType).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        file.fileTypeText,
-                        style: TextStyle(
-                          fontSize: size.smallText * 0.9,
-                          color: _getFileTypeColor(file.fileType),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: size.smallSpacing),
-                    Expanded(
-                      child: Text(
-                        '${file.createdUserName} • ${_formatDate(file.createdDate)}',
-                        style: TextStyle(
-                          fontSize: size.smallText,
-                          color: AppColors.textSecondary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+                Text(
+                  '${file.createdUserName} • ${_formatDate(file.createdDate)}',
+                  style: TextStyle(
+                    fontSize: size.smallText * 0.9,
+                    color: AppColors.textSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -443,100 +361,11 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
                 ),
               ),
             ],
-            icon: Icon(Icons.more_vert, color: AppColors.textSecondary),
+            icon: Icon(Icons.more_vert, color: AppColors.textSecondary, size: 18),
           ),
         ],
       ),
     );
-  }
-
-  /// 📸 Kameradan fotoğraf çek
-  Future<void> _capturePhoto() async {
-    try {
-      setState(() => _isUploading = true);
-
-      final fileData = await FileService.instance.capturePhoto();
-      if (fileData != null) {
-        await _uploadFile(fileData);
-      }
-    } catch (e) {
-      SnackbarHelper.showError(context: context, message: 'Fotoğraf çekilemedi: ${e.toString()}');
-    } finally {
-      setState(() => _isUploading = false);
-    }
-  }
-
-  /// 🖼️ Galeriden fotoğraf seç
-  Future<void> _pickFromGallery() async {
-    try {
-      setState(() => _isUploading = true);
-
-      final fileData = await FileService.instance.pickImageFromGallery();
-      if (fileData != null) {
-        await _uploadFile(fileData);
-      }
-    } catch (e) {
-      SnackbarHelper.showError(context: context, message: 'Fotoğraf seçilemedi: ${e.toString()}');
-    } finally {
-      setState(() => _isUploading = false);
-    }
-  }
-
-  /// 📄 Dosya seç
-  Future<void> _pickFile() async {
-    try {
-      setState(() => _isUploading = true);
-
-      final fileData = await FileService.instance.pickFile();
-      if (fileData != null) {
-        await _uploadFile(fileData);
-      }
-    } catch (e) {
-      SnackbarHelper.showError(context: context, message: 'Dosya seçilemedi: ${e.toString()}');
-    } finally {
-      setState(() => _isUploading = false);
-    }
-  }
-
-  /// 📤 Dosyayı sunucuya yükle
-  Future<void> _uploadFile(FileData fileData) async {
-    if (widget.activityId == null) {
-      SnackbarHelper.showError(
-        context: context,
-        message: 'Aktivite kaydedilmeden dosya yüklenemez',
-      );
-      return;
-    }
-
-    try {
-      final response = await FileService.instance.uploadActivityFile(
-        activityId: widget.activityId!,
-        file: fileData,
-      );
-
-      // 🎯 WEB response'u kontrol et
-      if (response.isSuccess && response.hasFiles) {
-        await _loadExistingFiles(); // Refresh file list
-
-        SnackbarHelper.showSuccess(
-          context: context,
-          message: 'Dosya başarıyla yüklendi: ${fileData.name}',
-        );
-
-        // Notify parent widget with uploaded file
-        if (response.firstFile != null) {
-          widget.onFileUploaded?.call(response.firstFile!);
-        }
-      } else {
-        throw FileException('Upload response invalid: ${response.errorMessage ?? "Unknown error"}');
-      }
-    } catch (e) {
-      debugPrint('[FILE_UPLOAD] Upload error: $e');
-      SnackbarHelper.showError(
-        context: context,
-        message: 'Dosya yüklenemedi: ${e.toString()}',
-      );
-    }
   }
 
   /// 👁️ Dosyayı görüntüle
@@ -550,7 +379,6 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
     }
 
     try {
-      // Loading göster
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -573,23 +401,30 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
         ),
       );
 
+      debugPrint('[IMAGE_VIEW] Getting image for file: ${file.fileName}');
+      debugPrint('[IMAGE_VIEW] File local name: ${file.localName}');
+
       final imageUrl = await FileService.instance.getFileViewUrl(file);
 
       if (mounted) {
-        Navigator.pop(context); // Loading'i kapat
+        Navigator.pop(context);
 
         if (imageUrl != null) {
+          debugPrint('[IMAGE_VIEW] Image URL received, length: ${imageUrl.length}');
+          debugPrint('[IMAGE_VIEW] Image URL preview: ${imageUrl.substring(0, math.min(100, imageUrl.length))}...');
           _showImageDialog(file, imageUrl);
         } else {
+          debugPrint('[IMAGE_VIEW] Image URL is null');
           SnackbarHelper.showError(
             context: context,
-            message: 'Resim yüklenemedi',
+            message: 'Resim yüklenemedi - API\'den veri gelmedi',
           );
         }
       }
     } catch (e) {
+      debugPrint('[IMAGE_VIEW] Error: $e');
       if (mounted) {
-        Navigator.pop(context); // Loading'i kapat
+        Navigator.pop(context);
         SnackbarHelper.showError(
           context: context,
           message: 'Resim görüntülenemedi: ${e.toString()}',
@@ -598,7 +433,6 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
     }
   }
 
-  /// 🖼️ Resim görüntüleme dialogu
   void _showImageDialog(AttachmentFile file, String imageUrl) {
     final size = AppSizes.of(context);
 
@@ -646,24 +480,7 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.memory(
-                        base64Decode(imageUrl.split(',')[1]),
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            height: 200,
-                            color: AppColors.background,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.error_outline, size: 48, color: AppColors.error),
-                                SizedBox(height: 8),
-                                Text('Resim yüklenemedi', style: TextStyle(color: AppColors.error)),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+                      child: _buildImageWidget(imageUrl),
                     ),
                   ),
                 ],
@@ -671,6 +488,68 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildImageWidget(String imageUrl) {
+    try {
+      // Base64 string'i temizle ve decode et
+      String base64String = imageUrl;
+
+      // "data:image/jpeg;base64," prefix'ini kaldır
+      if (base64String.contains(',')) {
+        base64String = base64String.split(',').last;
+      }
+
+      // Gereksiz tırnak işaretlerini kaldır
+      base64String = base64String.replaceAll('"', '');
+
+      // Base64 string'i normalize et (whitespace ve newline'ları kaldır)
+      base64String = base64String.replaceAll(RegExp(r'\s+'), '');
+
+      debugPrint('[IMAGE_VIEW] Cleaned base64 length: ${base64String.length}');
+      debugPrint('[IMAGE_VIEW] Cleaned base64 preview: ${base64String.substring(0, math.min(50, base64String.length))}...');
+
+      // Base64 decode yap
+      final bytes = base64Decode(base64String);
+
+      return Image.memory(
+        bytes,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint('[IMAGE_VIEW] Image decode error: $error');
+          return _buildImageError();
+        },
+      );
+    } catch (e) {
+      debugPrint('[IMAGE_VIEW] Base64 decode error: $e');
+      return _buildImageError();
+    }
+  }
+
+  Widget _buildImageError() {
+    return Container(
+      height: 200,
+      color: AppColors.background,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 48, color: AppColors.error),
+          SizedBox(height: 8),
+          Text(
+            'Resim yüklenemedi',
+            style: TextStyle(color: AppColors.error),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'Dosya formatı desteklenmiyor',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -690,6 +569,10 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
       if (response.isSuccess) {
         setState(() {
           _attachedFiles.removeWhere((f) => f.id == file.id);
+          // Dosya kalmadıysa kapat
+          if (_attachedFiles.isEmpty) {
+            _isExpanded = false;
+          }
         });
 
         SnackbarHelper.showSuccess(
@@ -749,9 +632,9 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
   Color _getFileTypeColor(int fileType) {
     switch (fileType) {
       case 0:
-        return AppColors.success; // Image
+        return AppColors.success;
       case 1:
-        return AppColors.info; // Document
+        return AppColors.info;
       default:
         return AppColors.textSecondary;
     }

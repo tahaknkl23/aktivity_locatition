@@ -1,16 +1,22 @@
-// lib/presentation/screens/activity/add_activity_screen_refactored.dart - FIXED
+// lib/presentation/screens/activity/add_activity_screen.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/helpers/snackbar_helper.dart';
-import '../../../core/widgets/dynamic_form/dynamic_form_widget.dart';
 import '../../../core/widgets/common/loading_state_widget.dart';
 import '../../../core/widgets/common/error_state_widget.dart';
+import '../../../core/services/location_service.dart';
+import '../../../core/services/file_service.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
 import '../../../data/models/activity/activity_list_model.dart';
 import '../../../data/services/api/activity_api_service.dart';
-import '../../widgets/activity/location_management_widget.dart';
-import '../../widgets/activity/address_info_widget.dart';
 import '../../../data/models/attachment/attachment_file_model.dart';
+import '../../widgets/activity/activity_action_chips_widget.dart';
+import '../../widgets/activity/activity_app_bar_widget.dart';
+import '../../widgets/activity/form_content_widget.dart';
+import '../../widgets/activity/save_button_widget.dart';
+import '../../widgets/activity/file_options_bottom_sheet.dart';
+import '../../widgets/activity/close_activity_dialog.dart';
 
 class AddActivityScreen extends StatefulWidget {
   final int? activityId;
@@ -29,18 +35,24 @@ class AddActivityScreen extends StatefulWidget {
 class _AddActivityScreenState extends State<AddActivityScreen> {
   final ActivityApiService _activityApiService = ActivityApiService();
 
+  // Form data
   DynamicFormModel? _formModel;
   Map<String, dynamic> _formData = {};
   bool _isLoading = true;
   bool _isSaving = false;
   String? _errorMessage;
 
-  // Address management
-  CompanyAddress? _selectedAddress;
+  // Action states
+  bool _isGettingLocation = false;
+  bool _isUploadingFile = false;
+  bool _isComparingLocation = false;
+  bool _isClosingActivity = false;
 
-  // 📎 File management
+  // Data states
+  LocationData? _currentLocation;
   final List<AttachmentFile> _attachedFiles = [];
-  int? savedActivityId;
+  CompanyAddress? _selectedAddress;
+  LocationComparisonResult? _locationComparison;
 
   @override
   void initState() {
@@ -48,9 +60,14 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     _loadFormData();
   }
 
+  // Getters
   bool get isEditing => widget.activityId != null && widget.activityId! > 0;
+  int? get savedActivityId => widget.activityId;
 
-  // 🔄 Form verilerini yükle
+  // ====================
+  // FORM LOADING METHODS
+  // ====================
+
   Future<void> _loadFormData() async {
     try {
       setState(() {
@@ -69,22 +86,19 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
           _formModel = formModel;
           _formData = Map<String, dynamic>.from(formModel.data);
 
-          // Pre-select company if provided
           if (widget.preSelectedCompanyId != null && !isEditing) {
             _formData['CompanyId'] = widget.preSelectedCompanyId;
-          }
-
-          // Set saved activity ID for file uploads
-          if (isEditing) {
-            savedActivityId = widget.activityId;
           }
 
           _isLoading = false;
         });
 
-        // Load addresses if company is pre-selected
         if (widget.preSelectedCompanyId != null && !isEditing) {
           await _loadCompanyAddresses(widget.preSelectedCompanyId!);
+        }
+
+        if (isEditing) {
+          await _loadExistingFiles();
         }
       }
     } catch (e) {
@@ -97,7 +111,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
   }
 
-  // 📦 Dropdown seçeneklerini yükle
   Future<void> _loadDropdownOptions(DynamicFormModel formModel) async {
     for (final section in formModel.sections) {
       for (final field in section.fields) {
@@ -119,7 +132,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
   }
 
-  // 📝 Form verisi değiştiğinde
   void _onFormDataChanged(Map<String, dynamic> formData) {
     setState(() {
       _formData = formData;
@@ -127,15 +139,13 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     _handleCascadeDropdowns(formData);
   }
 
-  // 🔄 Cascade dropdown yönetimi
   Future<void> _handleCascadeDropdowns(Map<String, dynamic> formData) async {
     if (_formModel == null) return;
 
-    // Company changed - reload contacts and addresses
     if (formData.containsKey('CompanyId') && formData['CompanyId'] != null) {
       final companyId = formData['CompanyId'] as int;
 
-      // Load contacts
+      // Load contacts for selected company
       final contactField = _formModel!.getFieldByKey('ContactId');
       if (contactField != null && contactField.type == FormFieldType.dropdown) {
         try {
@@ -149,11 +159,10 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
         }
       }
 
-      // Load addresses
+      // Load company addresses
       await _loadCompanyAddresses(companyId);
     }
 
-    // Address selection changed
     if (formData.containsKey('AddressId') && formData['AddressId'] != null && formData['CompanyId'] != null) {
       final companyId = formData['CompanyId'] as int;
       final addressId = formData['AddressId'] as int;
@@ -161,7 +170,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
   }
 
-  // 🏢 Firma adreslerini yükle
   Future<void> _loadCompanyAddresses(int companyId) async {
     try {
       final addresses = await _activityApiService.getActivityAddressOptions(
@@ -173,13 +181,12 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
         _selectedAddress = null;
       });
 
-      // Update form model address field
       final addressField = _formModel?.getFieldByKey('AddressId') ?? _formModel?.getFieldByKey('Address');
       if (addressField != null && addressField.type == FormFieldType.dropdown) {
         addressField.options = addresses;
       }
 
-      // Auto-select if only one address
+      // Auto-select if only one address available
       if (addresses.length == 1) {
         setState(() {
           _formData['AddressId'] = addresses.first.value;
@@ -187,7 +194,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
         await _loadAddressDetails(companyId, addresses.first.value as int);
       }
     } catch (e) {
-      setState(() {});
       SnackbarHelper.showError(
         context: context,
         message: 'Firma adresleri yüklenemedi: ${e.toString()}',
@@ -195,7 +201,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
   }
 
-  // 📍 Adres detaylarını yükle
   Future<void> _loadAddressDetails(int companyId, int addressId) async {
     try {
       final address = await _activityApiService.getSelectedAddressDetails(
@@ -206,11 +211,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
       if (address != null && mounted) {
         setState(() {
           _selectedAddress = address;
-          _formData['AddressText'] = address.displayAddress;
-          _formData['AddressFullText'] = address.fullAddress;
-          _formData['AddressType'] = address.tipi;
-          _formData['City'] = address.il;
-          _formData['District'] = address.ilce;
         });
 
         SnackbarHelper.showSuccess(
@@ -223,124 +223,212 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
   }
 
-  // 📍 Konum güncellendiğinde
-  void _onLocationUpdated(Map<String, dynamic> updatedFormData) {
-    setState(() {
-      _formData = updatedFormData;
-    });
+  Future<void> _loadExistingFiles() async {
+    if (savedActivityId == null) return;
+
+    try {
+      debugPrint('[ADD_ACTIVITY] Loading existing files for activity: $savedActivityId');
+
+      final response = await FileService.instance.getActivityFiles(
+        activityId: savedActivityId!,
+        tableId: 102,
+      );
+
+      if (mounted) {
+        setState(() {
+          _attachedFiles.clear();
+          _attachedFiles.addAll(response.data);
+        });
+        debugPrint('[ADD_ACTIVITY] Loaded ${_attachedFiles.length} existing files');
+      }
+    } catch (e) {
+      debugPrint('[ADD_ACTIVITY] Failed to load existing files: $e');
+    }
   }
 
-  // 📎 File upload callbacks
-  void onFileUploaded(AttachmentFile file) {
-    setState(() {
-      _attachedFiles.add(file);
-    });
-    SnackbarHelper.showSuccess(
+  // ==================
+  // LOCATION METHODS
+  // ==================
+
+  Future<void> _getCurrentLocation() async {
+    if (_isGettingLocation) return;
+
+    setState(() => _isGettingLocation = true);
+
+    try {
+      final locationData = await LocationService.instance.getCurrentLocation().timeout(Duration(seconds: 60));
+
+      if (locationData != null && mounted) {
+        setState(() {
+          _currentLocation = locationData;
+          _formData['Location'] = locationData.coordinates;
+          _formData['LocationText'] = locationData.address;
+        });
+
+        SnackbarHelper.showSuccess(
+          context: context,
+          message: 'Konum başarıyla alındı!',
+        );
+
+        // Auto-compare if company is selected
+        if (_formData['CompanyId'] != null) {
+          await _compareWithCompanyLocation();
+        }
+      }
+    } on TimeoutException {
+      if (mounted) {
+        SnackbarHelper.showError(
+          context: context,
+          message: 'Konum alma zaman aşımına uğradı. GPS açık mı kontrol edin.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        SnackbarHelper.showError(
+          context: context,
+          message: 'Konum alınamadı: ${e.toString()}',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGettingLocation = false);
+      }
+    }
+  }
+
+  Future<void> _compareWithCompanyLocation() async {
+    if (_currentLocation == null || _formData['CompanyId'] == null) return;
+
+    setState(() => _isComparingLocation = true);
+
+    try {
+      final result = await _activityApiService.compareLocations(
+        companyId: _formData['CompanyId'] as int,
+        currentLat: _currentLocation!.latitude,
+        currentLng: _currentLocation!.longitude,
+        toleranceInMeters: 100.0,
+      );
+
+      if (mounted) {
+        setState(() {
+          _locationComparison = result;
+        });
+
+        SnackbarHelper.showInfo(
+          context: context,
+          message: result.message,
+          backgroundColor: result.isAtSameLocation
+              ? AppColors.success
+              : result.isDifferentLocation
+                  ? AppColors.warning
+                  : AppColors.error,
+        );
+      }
+    } catch (e) {
+      debugPrint('[ADD_ACTIVITY] Location comparison error: $e');
+      if (mounted) {
+        SnackbarHelper.showError(
+          context: context,
+          message: 'Konum kıyaslaması yapılamadı: ${e.toString()}',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isComparingLocation = false);
+      }
+    }
+  }
+
+  // ================
+  // FILE METHODS
+  // ================
+
+  void _showFileOptions() {
+    showModalBottomSheet(
       context: context,
-      message: 'Dosya yüklendi: ${file.fileName}',
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => FileOptionsBottomSheet(
+        onFileCapture: _handleFileCapture,
+      ),
     );
   }
 
-  void onFileDeleted(AttachmentFile file) {
-    setState(() {
-      _attachedFiles.removeWhere((f) => f.id == file.id);
-    });
-    SnackbarHelper.showInfo(
-      context: context,
-      message: 'Dosya silindi: ${file.fileName}',
-    );
-  }
+  Future<void> _handleFileCapture(Future<FileData?> Function() captureFunction) async {
+    setState(() => _isUploadingFile = true);
 
-  // 🔒 Aktiviteyi kapat
-  Future<void> _closeActivity() async {
-    if (_formData['Location'] == null) {
+    try {
+      final fileData = await captureFunction();
+      if (fileData != null) {
+        await _uploadFile(fileData);
+      }
+    } catch (e) {
       SnackbarHelper.showError(
         context: context,
-        message: 'Aktiviteyi kapatmak için önce konum bilgisi gereklidir',
+        message: 'Dosya işlemi başarısız: ${e.toString()}',
+      );
+    } finally {
+      setState(() => _isUploadingFile = false);
+    }
+  }
+
+  Future<void> _uploadFile(FileData fileData) async {
+    if (savedActivityId == null) {
+      SnackbarHelper.showError(
+        context: context,
+        message: 'Aktivite kaydedilmeden dosya yüklenemez',
       );
       return;
     }
 
-    final shouldClose = await _showCloseActivityDialog();
-    if (!shouldClose) return;
-
     try {
-      // TODO: Close activity API call
-      SnackbarHelper.showSuccess(
-        context: context,
-        message: 'Aktivite başarıyla kapatıldı!',
+      // TODO: FileService.instance.uploadActivityFile implementasyonunu kontrol et
+      final mockFile = AttachmentFile(
+        id: DateTime.now().millisecondsSinceEpoch,
+        fileName: fileData.name,
+        localName: fileData.name,
+        fileType: fileData.isImage ? 0 : 1,
+        createdUserName: 'Current User',
+        createdDate: DateTime.now().toIso8601String(),
+        formName: 'Aktivite',
       );
 
-      await Future.delayed(const Duration(milliseconds: 1500));
-      if (mounted) Navigator.of(context).pop(true);
+      setState(() {
+        _attachedFiles.add(mockFile);
+      });
+
+      SnackbarHelper.showSuccess(
+        context: context,
+        message: 'Dosya eklendi (API bağlantısı gerekli)',
+      );
     } catch (e) {
+      debugPrint('[ADD_ACTIVITY] Upload error: $e');
       SnackbarHelper.showError(
         context: context,
-        message: 'Aktivite kapatılamadı: ${e.toString()}',
+        message: 'Dosya yüklenemedi: ${e.toString()}',
       );
     }
   }
 
-  // ❓ Kapatma onay dialogu
-  Future<bool> _showCloseActivityDialog() async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.close_outlined, color: AppColors.warning),
-                SizedBox(width: 8),
-                Text('Aktiviteyi Kapat'),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Bu aktiviteyi kapatmak istediğinizden emin misiniz?'),
-                SizedBox(height: 12),
-                Container(
-                  padding: EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.info.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.info.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline, color: AppColors.info, size: 16),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Kapatılan aktiviteler tekrar açılamaz',
-                          style: TextStyle(fontSize: 14, color: AppColors.info),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text('İptal'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.warning,
-                  foregroundColor: Colors.white,
-                ),
-                child: Text('Kapat'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+  void _onFileDeleted(AttachmentFile file) {
+    setState(() {
+      _attachedFiles.removeWhere((f) => f.id == file.id);
+    });
+    debugPrint('[ADD_ACTIVITY] File deleted: ${file.fileName}');
   }
 
-  // 💾 Aktiviteyi kaydet
+  void _onFileUploaded(AttachmentFile file) {
+    setState(() {
+      _attachedFiles.add(file);
+    });
+    debugPrint('[ADD_ACTIVITY] File uploaded: ${file.fileName}');
+  }
+
+  // =================
+  // ACTIVITY METHODS
+  // =================
+
   Future<void> _saveActivity() async {
     try {
       setState(() => _isSaving = true);
@@ -359,13 +447,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
       );
 
       if (mounted) {
-        // Set saved activity ID for file uploads if this is a new activity
-        if (!isEditing && result['Data']?['Id'] != null) {
-          setState(() {
-            savedActivityId = result['Data']['Id'] as int;
-          });
-        }
-
         SnackbarHelper.showSuccess(
           context: context,
           message: isEditing ? 'Aktivite başarıyla güncellendi!' : 'Aktivite başarıyla kaydedildi!',
@@ -385,7 +466,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
   }
 
-  // ✅ Form doğrulama
   bool _validateRequiredFields() {
     if (_formData['ActivityType'] == null || _formData['ActivityType'].toString().isEmpty) {
       SnackbarHelper.showError(
@@ -397,7 +477,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     return true;
   }
 
-  // 🧹 Form verilerini temizle
   Map<String, dynamic> _cleanFormData() {
     final cleanedData = <String, dynamic>{};
     for (final entry in _formData.entries) {
@@ -408,7 +487,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     return cleanedData;
   }
 
-  // ⚙️ Gerekli alanları ayarla
   void _ensureRequiredFields(Map<String, dynamic> data) {
     if (!isEditing) {
       final now = DateTime.now();
@@ -421,19 +499,69 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
         data['EndDate'] =
             '${endTime.day.toString().padLeft(2, '0')}.${endTime.month.toString().padLeft(2, '0')}.${endTime.year} ${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}';
       }
-      data['OpenOrClose'] = 1; // Open by default
+      data['OpenOrClose'] = 1;
     }
   }
+
+  Future<void> _closeActivity() async {
+    if (_currentLocation == null) {
+      SnackbarHelper.showError(
+        context: context,
+        message: 'Aktiviteyi kapatmak için önce konum bilgisi gereklidir',
+      );
+      return;
+    }
+
+    final shouldClose = await _showCloseActivityDialog();
+    if (!shouldClose) return;
+
+    setState(() => _isClosingActivity = true);
+
+    try {
+      // TODO: Implement close activity API call
+      await Future.delayed(Duration(seconds: 2));
+
+      if (mounted) {
+        SnackbarHelper.showSuccess(
+          context: context,
+          message: 'Aktivite başarıyla kapatıldı!',
+        );
+
+        await Future.delayed(Duration(milliseconds: 1500));
+        if (mounted) Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isClosingActivity = false);
+        SnackbarHelper.showError(
+          context: context,
+          message: 'Aktivite kapatılamadı: ${e.toString()}',
+        );
+      }
+    }
+  }
+
+  Future<bool> _showCloseActivityDialog() async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => CloseActivityDialog(),
+        ) ??
+        false;
+  }
+
+  // ===============
+  // UI BUILD METHODS
+  // ===============
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: buildBody(),
+      body: _buildBody(),
     );
   }
 
-  Widget buildBody() {
+  Widget _buildBody() {
     if (_isLoading) {
       return LoadingStateWidget(
         title: isEditing ? 'Aktivite bilgileri yükleniyor...' : 'Form yükleniyor...',
@@ -459,191 +587,53 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
       );
     }
 
-    return Stack(
-      children: [
-        // Ana form içeriği
-        Column(
-          children: [
-            Expanded(
-              child: DynamicFormWidget(
-                formModel: _formModel!,
-                onFormChanged: _onFormDataChanged,
-                onSave: null, // Kaydet butonunu gizle
-                isLoading: _isSaving,
-                isEditing: isEditing,
-              ),
-            ),
-          ],
-        ),
-
-        // 🔧 FIX: Custom footer with built-in close button
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: Container(
-            padding: EdgeInsets.all(12), // Küçültüldü
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
-                  blurRadius: 8, // Küçültüldü
-                  offset: Offset(0, -1), // Küçültüldü
-                ),
-              ],
-            ),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 📎 Additional content (file upload, address, location) - KOMPAKT
-                  if (_buildAdditionalContent() != null)
-                    Padding(
-                      padding: EdgeInsets.only(bottom: 12), // Küçültüldü
-                      child: _buildAdditionalContent()!,
-                    ),
-
-                  // Action buttons - KOMPAKT
-                  Row(
-                    children: [
-                      // Cancel button - küçük
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: AppColors.textSecondary),
-                            padding: EdgeInsets.symmetric(vertical: 12), // Küçültüldü
-                          ),
-                          child: Text(
-                            'İptal',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 14, // Küçültüldü
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      SizedBox(width: 12), // Küçültüldü
-
-                      // Save button - küçük
-                      Expanded(
-                        flex: 2,
-                        child: ElevatedButton(
-                          onPressed: _isSaving ? null : _saveActivity,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            padding: EdgeInsets.symmetric(vertical: 12), // Küçültüldü
-                            elevation: 3,
-                          ),
-                          child: _isSaving
-                              ? Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(
-                                      height: 16, // Küçültüldü
-                                      width: 16, // Küçültüldü
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                      ),
-                                    ),
-                                    SizedBox(width: 6),
-                                    Text('Kaydediliyor...', style: TextStyle(fontSize: 14)),
-                                  ],
-                                )
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(isEditing ? Icons.update : Icons.save, size: 18), // Küçültüldü
-                                    SizedBox(width: 6),
-                                    Text(
-                                      isEditing ? 'Güncelle' : 'Kaydet',
-                                      style: TextStyle(
-                                        fontSize: 14, // Küçültüldü
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // 📍 Ek içerik (dosya + adres + konum) - KOMPAKT
-  Widget? _buildAdditionalContent() {
     return Column(
       children: [
-        // 📎 KOMPAKT DOSYA UPLOAD BUTONU
-        Container(
-          margin: EdgeInsets.only(bottom: 12),
-          child: Row(
-            children: [
-              // Dosya seç butonu
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    // TODO: Dosya seç
-                    print('Dosya seç');
-                  },
-                  icon: Icon(Icons.attach_file, size: 18),
-                  label: Text('Dosya Ekle', style: TextStyle(fontSize: 13)),
-                  style: OutlinedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(vertical: 10),
-                    side: BorderSide(color: AppColors.primary),
-                  ),
-                ),
-              ),
-            ],
+        // App Bar
+        ActivityAppBarWidget(
+          isEditing: isEditing,
+          activityId: widget.activityId,
+          onBack: () => Navigator.of(context).pop(),
+        ),
+
+        // Action Chips
+        ActivityActionChipsWidget(
+          isEditing: isEditing,
+          savedActivityId: savedActivityId,
+          currentLocation: _currentLocation,
+          locationComparison: _locationComparison,
+          attachedFiles: _attachedFiles,
+          isGettingLocation: _isGettingLocation,
+          isClosingActivity: _isClosingActivity,
+          onGetLocation: _getCurrentLocation,
+          onShowFileOptions: _showFileOptions,
+          onCloseActivity: _closeActivity,
+        ),
+
+        // Form Content
+        Expanded(
+          child: FormContentWidget(
+            selectedAddress: _selectedAddress,
+            currentLocation: _currentLocation,
+            locationComparison: _locationComparison,
+            attachedFiles: _attachedFiles,
+            formModel: _formModel!,
+            isSaving: _isSaving,
+            isEditing: isEditing,
+            isGettingLocation: _isGettingLocation,
+            savedActivityId: savedActivityId,
+            onFormChanged: _onFormDataChanged,
+            onFileDeleted: _onFileDeleted,
+            onFileUploaded: _onFileUploaded,
+            onRefreshLocation: _getCurrentLocation,
           ),
         ),
 
-        // Yüklenen dosyalar sayısı (varsa)
-        if (_attachedFiles.isNotEmpty)
-          Container(
-            margin: EdgeInsets.only(bottom: 12),
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.success.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
-            ),
-            child: Text(
-              '${_attachedFiles.length} dosya eklendi',
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.success,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-
-        // Seçilen adres bilgisi (kompakt)
-        if (_selectedAddress != null)
-          Container(
-            margin: EdgeInsets.only(bottom: 8),
-            child: AddressInfoWidget(address: _selectedAddress!),
-          ),
-
-        // Konum yönetimi
-        LocationManagementWidget(
-          formData: _formData,
-          onLocationUpdated: _onLocationUpdated,
+        // Save Button
+        SaveButtonWidget(
+          isSaving: _isSaving,
           isEditing: isEditing,
-          onActivityClose: _closeActivity,
+          onSave: _saveActivity,
         ),
       ],
     );
