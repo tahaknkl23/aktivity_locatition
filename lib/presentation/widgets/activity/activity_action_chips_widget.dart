@@ -1,4 +1,4 @@
-// lib/presentation/widgets/activity/activity_action_chips_widget.dart
+// lib/presentation/widgets/activity/activity_action_chips_widget.dart - ŞUBE ODAKLI VERSİYON
 import 'package:aktivity_location_app/data/services/api/activity_api_service.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
@@ -43,8 +43,6 @@ class ActivityActionChipsWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-   // final size = AppSizes.of(context);
-
     return Container(
       height: 70,
       decoration: BoxDecoration(
@@ -57,28 +55,31 @@ class ActivityActionChipsWidget extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         children: [
-          _buildActionChip(
-            context: context,
-            icon: Icons.my_location,
-            label: currentLocation != null ? 'Konum Alındı' : 'Konumumu Al',
-            status: _getLocationChipStatus(),
-            onTap: isGettingLocation ? null : onGetLocation,
-          ),
-          SizedBox(width: 8),
-          _buildActionChip(
-            context: context,
-            icon: Icons.attach_file,
-            label: 'Dosyalar',
-            status: attachedFiles.isNotEmpty ? ChipStatus.success : ChipStatus.inactive,
-            badge: attachedFiles.isNotEmpty ? attachedFiles.length : null,
-            onTap: () => _handleFilesTap(context),
-          ),
+          // 🔧 SADECE EDİTİNG MODE'DA BUTONLAR
+          if (isEditing) ...[
+            _buildActionChip(
+              context: context,
+              icon: Icons.my_location,
+              label: currentLocation != null ? 'Konum Alındı' : 'Konum Al',
+              status: _getLocationChipStatus(),
+              onTap: isGettingLocation ? null : onGetLocation,
+            ),
+            SizedBox(width: 8),
+            _buildActionChip(
+              context: context,
+              icon: Icons.attach_file,
+              label: 'Dosya',
+              status: attachedFiles.isNotEmpty ? ChipStatus.success : ChipStatus.inactive,
+              badge: attachedFiles.isNotEmpty ? attachedFiles.length : null,
+              onTap: () => _handleFilesTap(context),
+            ),
+          ],
           if (isEditing && currentLocation != null) ...[
             SizedBox(width: 8),
             _buildActionChip(
               context: context,
               icon: Icons.close_outlined,
-              label: 'Aktiviteyi Kapat',
+              label: 'Kapat',
               status: isClosingActivity ? ChipStatus.loading : ChipStatus.warning,
               onTap: isClosingActivity ? null : onCloseActivity,
             ),
@@ -88,20 +89,23 @@ class ActivityActionChipsWidget extends StatelessWidget {
     );
   }
 
+  /// 🆕 ŞUBE ODAKLI Konum chip status'u
   ChipStatus _getLocationChipStatus() {
     if (isGettingLocation) return ChipStatus.loading;
 
     if (currentLocation != null) {
       if (locationComparison?.isAtSameLocation == true) {
-        return ChipStatus.success;
+        return ChipStatus.success; // Şubede
       } else if (locationComparison?.isDifferentLocation == true) {
-        return ChipStatus.warning;
+        return ChipStatus.warning; // Şube dışında
+      } else if (locationComparison?.status == LocationComparisonStatus.noCompanyLocation) {
+        return ChipStatus.active; // Şube seçilmedi ama konum var
       } else {
-        return ChipStatus.success;
+        return ChipStatus.error; // Hata durumu
       }
     }
 
-    return ChipStatus.inactive;
+    return ChipStatus.inactive; // Konum yok
   }
 
   void _handleFilesTap(BuildContext context) {

@@ -1,13 +1,13 @@
-// lib/presentation/widgets/activity/form_content_widget.dart - Geliştirilmiş versiyon
+// lib/presentation/widgets/activity/form_content_widget.dart - FINAL CLEAN VERSION
 import 'package:flutter/material.dart';
 import '../../../core/widgets/dynamic_form/dynamic_form_widget.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
 import '../../../data/models/activity/activity_list_model.dart';
 import '../../../data/models/attachment/attachment_file_model.dart';
 import '../../../core/services/location_service.dart';
-import '../../../data/services/api/activity_api_service.dart';
 import '../../../core/services/file_service.dart';
 import '../../../core/helpers/snackbar_helper.dart';
+import '../../../data/services/api/activity_api_service.dart';
 import 'address_card_widget.dart';
 import 'unified_location_widget.dart';
 import '../common/file_upload_widget.dart';
@@ -27,6 +27,8 @@ class FormContentWidget extends StatefulWidget {
   final Function(AttachmentFile) onFileDeleted;
   final Function(AttachmentFile) onFileUploaded;
   final VoidCallback onRefreshLocation;
+  // ✅ Handler registration callback
+  final Function(VoidCallback, VoidCallback)? onRegisterHandlers;
 
   const FormContentWidget({
     super.key,
@@ -43,6 +45,7 @@ class FormContentWidget extends StatefulWidget {
     required this.onFileDeleted,
     required this.onFileUploaded,
     required this.onRefreshLocation,
+    this.onRegisterHandlers,
   });
 
   @override
@@ -50,7 +53,19 @@ class FormContentWidget extends StatefulWidget {
 }
 
 class _FormContentWidgetState extends State<FormContentWidget> {
-  // FileUploadWidget için key - ama state'e erişemeyiz çünkü private
+  // ✅ FileUploadWidget reference - function callback ile
+  Function(Future<FileData?> Function())? _fileUploadHandler;
+  VoidCallback? _fileRefreshHandler;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // ✅ Register handlers after widget build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onRegisterHandlers?.call(_showFileOptions, refreshFiles);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,54 +74,69 @@ class _FormContentWidgetState extends State<FormContentWidget> {
     final padding = isTablet ? 24.0 : screenWidth * 0.04;
 
     return SingleChildScrollView(
-      padding: EdgeInsets.all(padding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Address card widget
           if (widget.selectedAddress != null) ...[
-            AddressCardWidget(selectedAddress: widget.selectedAddress!),
-            SizedBox(height: padding),
+            Padding(
+              padding: EdgeInsets.all(padding),
+              child: AddressCardWidget(selectedAddress: widget.selectedAddress!),
+            ),
           ],
 
           // Location comparison card
           if (widget.currentLocation != null) ...[
-            UnifiedLocationWidget(
-              currentLocation: widget.currentLocation!,
-              locationComparison: widget.locationComparison,
-              isGettingLocation: widget.isGettingLocation,
-              onRefreshLocation: widget.onRefreshLocation,
+            Padding(
+              padding: EdgeInsets.all(padding),
+              child: UnifiedLocationWidget(
+                currentLocation: widget.currentLocation!,
+                locationComparison: widget.locationComparison,
+                isGettingLocation: widget.isGettingLocation,
+                onRefreshLocation: widget.onRefreshLocation,
+              ),
             ),
-            SizedBox(height: padding),
           ],
 
-          // File upload widget - Geliştirilmiş versiyon
-          FileUploadWidget(
-            activityId: widget.savedActivityId,
-            tableId: 102,
-            onFileUploaded: _handleFileUploaded,
-            onFileDeleted: _handleFileDeleted,
-            onShowFileOptions: _showFileOptions,
-          ),
+          // ✅ FileUploadWidget - Sadece editing modda
+          if (widget.isEditing) ...[
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: padding),
+              child: FileUploadWidget(
+                activityId: widget.savedActivityId,
+                tableId: 102,
+                onFileUploaded: widget.onFileUploaded,
+                onFileDeleted: widget.onFileDeleted,
+                onShowFileOptions: _showFileOptions,
+                onRegisterHandlers: (uploadHandler, refreshHandler) {
+                  _fileUploadHandler = uploadHandler;
+                  _fileRefreshHandler = refreshHandler;
+                },
+              ),
+            ),
+          ],
 
-          // Main dynamic form
-          DynamicFormWidget(
-            formModel: widget.formModel,
-            onFormChanged: widget.onFormChanged,
-            onSave: null,
-            isLoading: widget.isSaving,
-            isEditing: widget.isEditing,
-            showHeader: false,
-            showActions: false,
+          // Main dynamic form - Padding ile (Expanded değil!)
+          Padding(
+            padding: EdgeInsets.all(padding),
+            child: DynamicFormWidget(
+              formModel: widget.formModel,
+              onFormChanged: widget.onFormChanged,
+              onSave: null,
+              isLoading: widget.isSaving,
+              isEditing: widget.isEditing,
+              showHeader: false,
+              showActions: false,
+            ),
           ),
         ],
       ),
     );
   }
 
-  /// 📤 Dosya yükleme seçeneklerini göster
+  /// ✅ File options modal'ını aç
   void _showFileOptions() {
-    debugPrint('[FORM_CONTENT] 🚀 Showing file options bottom sheet');
+    debugPrint('[FORM_CONTENT] 🚀 _showFileOptions called');
 
     if (widget.savedActivityId == null) {
       SnackbarHelper.showWarning(
@@ -121,126 +151,39 @@ class _FormContentWidgetState extends State<FormContentWidget> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
+      isScrollControlled: true,
       builder: (context) => FileOptionsBottomSheet(
         onFileCapture: _handleFileCapture,
       ),
     );
   }
 
-  /// 📸 Dosya yakalama işlemi
+  /// ✅ File capture işlemi - Registered handler'a delegate et
   Future<void> _handleFileCapture(Future<FileData?> Function() captureFunction) async {
-    debugPrint('[FORM_CONTENT] 📸 File capture started');
+    debugPrint('[FORM_CONTENT] 🎯 _handleFileCapture called');
 
-    if (widget.savedActivityId == null) {
+    // Registered upload handler'ı kullan
+    if (_fileUploadHandler != null) {
+      debugPrint('[FORM_CONTENT] ✅ Using registered upload handler');
+      await _fileUploadHandler!(captureFunction);
+    } else {
+      debugPrint('[FORM_CONTENT] ❌ No upload handler registered');
       SnackbarHelper.showError(
         context: context,
-        message: 'Aktivite kaydedilmeden dosya eklenemez',
-      );
-      return;
-    }
-
-    try {
-      // Direkt upload işlemi yap
-      await _directFileUpload(captureFunction);
-    } catch (e) {
-      debugPrint('[FORM_CONTENT] ❌ File capture error: $e');
-      SnackbarHelper.showError(
-        context: context,
-        message: 'Dosya işlemi başarısız: ${e.toString()}',
+        message: 'Dosya yükleme servisi henüz hazır değil',
       );
     }
   }
 
-  /// 📤 Direkt dosya yükleme (fallback)
-  Future<void> _directFileUpload(Future<FileData?> Function() captureFunction) async {
-    try {
-      debugPrint('[FORM_CONTENT] 📤 Starting direct file upload');
+  /// ✅ Public refresh method - Registered handler'ı kullan
+  void refreshFiles() {
+    debugPrint('[FORM_CONTENT] 🔄 refreshFiles called');
 
-      final fileData = await captureFunction();
-
-      if (fileData == null) {
-        debugPrint('[FORM_CONTENT] ❌ No file selected');
-        return;
-      }
-
-      debugPrint('[FORM_CONTENT] ✅ File captured: ${fileData.name}');
-      debugPrint('[FORM_CONTENT] 📁 File size: ${fileData.formattedSize}');
-      debugPrint('[FORM_CONTENT] 📁 File type: ${fileData.mimeType}');
-
-      // Show progress
-      SnackbarHelper.showInfo(
-        context: context,
-        message: 'Dosya yükleniyor: ${fileData.name}',
-      );
-
-      // Upload file
-      debugPrint('[FORM_CONTENT] 🚀 Starting upload to server');
-      final response = await FileService.instance.uploadActivityFile(
-        activityId: widget.savedActivityId!,
-        file: fileData,
-        tableId: 102,
-      );
-
-      debugPrint('[FORM_CONTENT] 📊 Upload response: ${response.isSuccess}');
-
-      if (response.isSuccess && response.firstFile != null) {
-        _handleFileUploaded(response.firstFile!);
-
-        SnackbarHelper.showSuccess(
-          context: context,
-          message: 'Dosya başarıyla yüklendi: ${fileData.name}',
-        );
-
-        debugPrint('[FORM_CONTENT] ✅ Upload completed successfully');
-      } else {
-        throw FileException(response.errorMessage ?? 'Upload failed');
-      }
-    } catch (e) {
-      debugPrint('[FORM_CONTENT] ❌ Direct upload error: $e');
-
-      String errorMsg = 'Dosya yüklenemedi';
-      if (e is FileException) {
-        errorMsg = e.message;
-      } else if (e.toString().contains('SocketException')) {
-        errorMsg = 'İnternet bağlantısı hatası';
-      } else if (e.toString().contains('TimeoutException')) {
-        errorMsg = 'Yükleme zaman aşımı';
-      }
-
-      SnackbarHelper.showError(
-        context: context,
-        message: errorMsg,
-      );
-    }
-  }
-
-  /// 📁 Dosya yükleme başarılı callback
-  void _handleFileUploaded(AttachmentFile file) {
-    debugPrint('[FORM_CONTENT] ✅ File uploaded callback: ${file.fileName}');
-
-    // Parent widget'a bildir
-    widget.onFileUploaded(file);
-
-    // State güncelle (eğer gerekirse)
-    if (mounted) {
-      setState(() {
-        // UI güncellemesi için
-      });
-    }
-  }
-
-  /// 🗑️ Dosya silme callback
-  void _handleFileDeleted(AttachmentFile file) {
-    debugPrint('[FORM_CONTENT] 🗑️ File deleted callback: ${file.fileName}');
-
-    // Parent widget'a bildir
-    widget.onFileDeleted(file);
-
-    // State güncelle (eğer gerekirse)
-    if (mounted) {
-      setState(() {
-        // UI güncellemesi için
-      });
+    if (_fileRefreshHandler != null) {
+      _fileRefreshHandler!();
+      debugPrint('[FORM_CONTENT] ✅ Files refreshed via registered handler');
+    } else {
+      debugPrint('[FORM_CONTENT] ⚠️ No refresh handler registered');
     }
   }
 }

@@ -1,4 +1,4 @@
-// lib/presentation/widgets/activity/unified_location_widget.dart
+// lib/presentation/widgets/activity/unified_location_widget.dart - ŞUBE ODAKLI VERSİYON
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -26,7 +26,7 @@ class UnifiedLocationWidget extends StatelessWidget {
     final size = AppSizes.of(context);
     final comparison = locationComparison;
 
-    // Status belirleme
+    // 🆕 ŞUBE ODAKLI Status belirleme
     Color statusColor = AppColors.info;
     IconData statusIcon = Icons.location_on;
     String statusTitle = 'KONUM BİLGİSİ';
@@ -35,15 +35,19 @@ class UnifiedLocationWidget extends StatelessWidget {
       if (comparison.isAtSameLocation) {
         statusColor = AppColors.success;
         statusIcon = Icons.check_circle;
-        statusTitle = 'AYNI KONUMDASINIZ';
+        statusTitle = 'ŞUBEDESİNİZ'; // 🆕 Şube vurgusu
       } else if (comparison.isDifferentLocation) {
         statusColor = AppColors.warning;
         statusIcon = Icons.warning;
-        statusTitle = 'FARKLI KONUMDASINIZ';
+        statusTitle = 'ŞUBE DIŞINDASINIZ'; // 🆕 Şube vurgusu
+      } else if (comparison.status == LocationComparisonStatus.noCompanyLocation) {
+        statusColor = AppColors.info;
+        statusIcon = Icons.info;
+        statusTitle = 'ŞUBE SEÇİLMEDİ'; // 🆕 Şube vurgusu
       } else {
         statusColor = AppColors.error;
         statusIcon = Icons.error;
-        statusTitle = 'KONUM KARŞILAŞTIRILAMADI';
+        statusTitle = 'ŞUBE KONUMU BULUNAMADI'; // 🆕 Şube vurgusu
       }
     }
 
@@ -183,18 +187,55 @@ class UnifiedLocationWidget extends StatelessWidget {
             Divider(height: 1),
             SizedBox(height: isTablet ? 8 : screenWidth * 0.02),
 
-            // Firma konumu
+            // 🆕 Şube konumu (firma değil!)
             _buildLocationRow(
               context: context,
-              icon: Icons.business,
-              iconColor: AppColors.primary,
-              title: 'Firma Konumu:',
-              subtitle:
-                  'Koordinat: ${locationComparison!.companyLocation!.latitude.toStringAsFixed(4)}, ${locationComparison!.companyLocation!.longitude.toStringAsFixed(4)}',
+              icon: Icons.store, // 🆕 Şube ikonu
+              iconColor: AppColors.secondary, // 🆕 Şube rengi
+              title: 'Seçili Şube Konumu:', // 🆕 Şube başlığı
+              subtitle: locationComparison!.companyLocation!.address.isNotEmpty
+                  ? locationComparison!.companyLocation!.address
+                  : 'Koordinat: ${locationComparison!.companyLocation!.latitude.toStringAsFixed(4)}, ${locationComparison!.companyLocation!.longitude.toStringAsFixed(4)}',
             ),
+          ],
+
+          // 🆕 Şube seçilmediğinde bilgi mesajı
+          if (locationComparison?.status == LocationComparisonStatus.noCompanyLocation) ...[
+            SizedBox(height: isTablet ? 8 : screenWidth * 0.02),
+            Divider(height: 1),
+            SizedBox(height: isTablet ? 8 : screenWidth * 0.02),
+            _buildInfoMessage(context),
           ],
         ],
       ),
+    );
+  }
+
+  /// 🆕 Bilgi mesajı widget'ı
+  Widget _buildInfoMessage(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isTablet = screenWidth > 600;
+
+    return Row(
+      children: [
+        Icon(
+          Icons.info_outline,
+          size: isTablet ? 18 : screenWidth * 0.035,
+          color: AppColors.info,
+        ),
+        SizedBox(width: isTablet ? 8 : screenWidth * 0.02),
+        Expanded(
+          child: Text(
+            'Konum kıyaslaması için önce firma ve şube seçimi yapınız',
+            style: TextStyle(
+              fontSize: isTablet ? 14 : screenWidth * 0.03,
+              color: AppColors.info,
+              fontWeight: FontWeight.w500,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

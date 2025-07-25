@@ -1,4 +1,4 @@
-// lib/presentation/widgets/activity/activity_card_widget.dart
+// lib/presentation/widgets/activity/activity_card_widget.dart - ŞUBE DESTEKLİ
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -48,11 +48,21 @@ class ActivityCardWidget extends StatelessWidget {
                   _buildHeader(size),
                   SizedBox(height: size.mediumSpacing),
                   _buildCompanyAndContact(size),
+
+                  // 🆕 ŞUBE BİLGİSİ (Çok önemli!)
+                  if (activity.hasSube) ...[
+                    SizedBox(height: size.smallSpacing),
+                    _buildSubeSection(size),
+                  ],
+
                   SizedBox(height: size.smallSpacing),
-                  if (activity.hasAddress) ...[
+
+                  // 🔄 Adres bilgisi (enrichment varsa)
+                  if (activity.hasAddress && !activity.hasSube) ...[
                     _buildAddressSection(size),
                     SizedBox(height: size.smallSpacing),
                   ],
+
                   _buildDateAndRepresentative(size),
                   if (activity.detay != null && activity.detay!.isNotEmpty) ...[
                     SizedBox(height: size.smallSpacing),
@@ -107,17 +117,6 @@ class ActivityCardWidget extends StatelessWidget {
                 ),
                 SizedBox(height: size.tinySpacing),
               ],
-              Text(
-                activity.konu ?? 'Konu belirtilmemiş',
-                style: TextStyle(
-                  fontSize: size.textSize,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                  fontStyle: activity.konu == null ? FontStyle.italic : FontStyle.normal,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
             ],
           ),
         ),
@@ -151,6 +150,118 @@ class ActivityCardWidget extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  // 🆕 YENİ: Şube bilgisi gösterimi (Koordinat dahil)
+  Widget _buildSubeSection(AppSizes size) {
+    return Container(
+      padding: EdgeInsets.all(size.cardPadding * 0.75),
+      decoration: BoxDecoration(
+        color: AppColors.secondary.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(size.cardBorderRadius * 0.75),
+        border: Border.all(
+          color: AppColors.secondary.withValues(alpha: 0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: AppColors.secondary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.store,
+                  size: 16,
+                  color: AppColors.secondary,
+                ),
+              ),
+              SizedBox(width: size.smallSpacing),
+              Expanded(
+                child: Text(
+                  'Şube',
+                  style: TextStyle(
+                    fontSize: size.smallText,
+                    color: AppColors.secondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              // 🆕 Koordinat badge'i
+              if (activity.hasValidCoordinates)
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.my_location,
+                        size: 12,
+                        color: AppColors.success,
+                      ),
+                      SizedBox(width: 2),
+                      Text(
+                        'GPS',
+                        style: TextStyle(
+                          fontSize: size.smallText * 0.8,
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          SizedBox(height: size.smallSpacing),
+          Text(
+            activity.displaySube,
+            style: TextStyle(
+              fontSize: size.textSize * 0.95,
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          // 🆕 Koordinat bilgisi (isteğe bağlı göster)
+          if (activity.hasValidCoordinates) ...[
+            SizedBox(height: size.tinySpacing),
+            Row(
+              children: [
+                Icon(
+                  Icons.place,
+                  size: 14,
+                  color: AppColors.textSecondary,
+                ),
+                SizedBox(width: size.tinySpacing),
+                Expanded(
+                  child: Text(
+                    activity.displayKonum,
+                    style: TextStyle(
+                      fontSize: size.smallText * 0.85,
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -254,8 +365,8 @@ class ActivityCardWidget extends StatelessWidget {
         Expanded(
           child: InfoItemWidget(
             icon: Icons.access_time,
-            label: 'Başlangıç',
-            value: activity.baslangic ?? 'Belirtilmemiş',
+            label: activity.hasBitis ? 'Zaman Aralığı' : 'Başlangıç',
+            value: activity.timeRange,
             isEmpty: activity.baslangic == null,
           ),
         ),
@@ -310,35 +421,6 @@ class ActivityCardWidget extends StatelessWidget {
   Widget _buildFooter(AppSizes size) {
     return Column(
       children: [
-        // 🆕 YENİ: Kayıt tarihi ve oluşturan kişi
-        if (activity.tarih != null || activity.olusturan != null) ...[
-          Row(
-            children: [
-              if (activity.tarih != null) ...[
-                Expanded(
-                  child: InfoItemWidget(
-                    icon: Icons.calendar_today,
-                    label: 'Kayıt Tarihi',
-                    value: activity.tarih!,
-                    isEmpty: false,
-                  ),
-                ),
-                if (activity.olusturan != null) SizedBox(width: size.mediumSpacing),
-              ],
-              if (activity.olusturan != null)
-                Expanded(
-                  child: InfoItemWidget(
-                    icon: Icons.person_add,
-                    label: 'Oluşturan',
-                    value: activity.olusturan!,
-                    isEmpty: false,
-                  ),
-                ),
-            ],
-          ),
-          SizedBox(height: size.mediumSpacing),
-        ],
-
         // Status ve ID row
         Row(
           children: [

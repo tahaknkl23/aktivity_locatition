@@ -13,7 +13,8 @@
         android:label="aktivity_location_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="true">
+        android:requestLegacyExternalStorage="true"
+        android:largeHeap="true">  <!-- 👈 Bu satırı ekleyin -->
         
         <activity
             android:name=".MainActivity"

@@ -35,7 +35,7 @@ class FileService {
           source: ImageSource.camera,
           maxWidth: 1024, // Daha düşük çözünürlük - memory için
           maxHeight: 1024,
-          imageQuality: 75, // Daha düşük kalite - performance için
+          imageQuality: 100, // Daha düşük kalite - performance için
           preferredCameraDevice: CameraDevice.rear,
         )
             .timeout(
@@ -95,7 +95,7 @@ class FileService {
         source: ImageSource.gallery,
         maxWidth: 1920,
         maxHeight: 1080,
-        imageQuality: 85,
+        imageQuality: 100,
       );
 
       if (image == null) {
