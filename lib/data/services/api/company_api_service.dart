@@ -1,4 +1,4 @@
-// company_api_service.dart - TAM HALİ (adres desteğiyle)
+// company_api_service.dart - TAM HALİ (UPDATE & DELETE FIX)
 
 import 'package:flutter/material.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
@@ -63,27 +63,219 @@ class CompanyApiService extends BaseApiService {
     }
   }
 
-  /// Save company form data
+  /// 🔧 FIXED: Save/Update company - WEB API UYUMLU
   Future<Map<String, dynamic>> saveCompany({
     required Map<String, dynamic> formData,
     int? companyId,
   }) async {
     try {
-      debugPrint('[COMPANY_API] Saving company - ID: $companyId');
+      final isUpdate = companyId != null && companyId > 0;
+      debugPrint('[COMPANY_API] ${isUpdate ? 'Updating' : 'Creating'} company - ID: $companyId');
       debugPrint('[COMPANY_API] Form data keys: ${formData.keys.toList()}');
 
-      final response = await saveFormData(
-        controller: 'CompanyAdd',
-        formData: formData,
-        id: companyId,
+      // 🎯 FORM DATA TEMİZLİĞİ - WEB FORMAT
+      final cleanedData = <String, dynamic>{};
+
+      for (final entry in formData.entries) {
+        final key = entry.key;
+        final value = entry.value;
+
+        // Null/empty kontrolü
+        if (value != null && value.toString().trim().isNotEmpty) {
+          // 🔧 ÖZEL CASE: Referans MultiSelectBox - Array'den String'e
+          if (key == 'Referance' && value is List && value.isNotEmpty) {
+            cleanedData[key] = value.first.toString();
+            debugPrint('[COMPANY_API] 🔧 Referans converted: List → String = ${cleanedData[key]}');
+          }
+          // 🔧 ÖZEL CASE: Dropdown helper fields'ları temizle
+          else if (key.endsWith('_DDL') || key.endsWith('_AutoComplateText')) {
+            // Bu field'ları ekleme - web'de gerekmez
+            debugPrint('[COMPANY_API] 🧹 Skipping UI helper field: $key');
+            continue;
+          } else {
+            cleanedData[key] = value;
+          }
+        }
+      }
+
+      // 🎯 WEB API REQUEST BODY
+      final requestBody = {
+        // Form metadata
+        "form_REV": false,
+        "form_ID": 3,
+        "form_PATH": isUpdate ? "/Dyn/CompanyAdd/Detail/$companyId" : "/Dyn/CompanyAdd/Detail",
+        "IsCloneRecord": false,
+        "tableId": 104,
+
+        // Form data
+        ...cleanedData,
+
+        // ID handling
+        "Id": companyId ?? 0,
+      };
+
+      debugPrint('[COMPANY_API] 🔍 Request body: $requestBody');
+
+      // 🎯 API ENDPOINT SELECTION
+      final endpoint = isUpdate ? '/api/admin/DynamicFormApi/UpdateData' : '/api/admin/DynamicFormApi/InsertData';
+
+      final response = await ApiClient.post(endpoint, body: requestBody);
+
+      debugPrint('[COMPANY_API] 🔍 Response status: ${response.statusCode}');
+      debugPrint('[COMPANY_API] 🔍 Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data is Map<String, dynamic>) {
+          // Response structure kontrolü
+          if (data.containsKey('Data') && data['Data'] != null) {
+            final responseData = data['Data'] as Map<String, dynamic>;
+            final returnedId = responseData['Id'];
+            debugPrint('[COMPANY_API] ✅ Company ${isUpdate ? 'updated' : 'saved'} successfully with ID: $returnedId');
+            return data;
+          }
+
+          // Direkt data response
+          if (data.containsKey('Id')) {
+            debugPrint('[COMPANY_API] ✅ Company ${isUpdate ? 'updated' : 'saved'} successfully with ID: ${data['Id']}');
+            return data;
+          }
+        }
+
+        throw Exception('Invalid response format: ${data.toString()}');
+      } else {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('[COMPANY_API] ❌ ${companyId != null ? 'Update' : 'Save'} error: $e');
+
+      // User-friendly error messages
+      String userMessage = companyId != null ? 'Firma güncellenirken hata oluştu' : 'Firma kaydedilirken hata oluştu';
+
+      if (e.toString().contains('401')) {
+        userMessage = 'Oturum süresi dolmuş. Lütfen tekrar giriş yapın.';
+      } else if (e.toString().contains('403')) {
+        userMessage = 'Bu işlem için yetkiniz bulunmamaktadır.';
+      } else if (e.toString().contains('404')) {
+        userMessage = companyId != null ? 'Güncellenecek firma bulunamadı.' : 'API endpoint bulunamadı.';
+      } else if (e.toString().contains('500')) {
+        userMessage = 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.';
+      } else if (e.toString().contains('network') || e.toString().contains('connection')) {
+        userMessage = 'İnternet bağlantınızı kontrol edin.';
+      }
+
+      throw Exception(userMessage);
+    }
+  }
+
+  /// 🆕 DELETE company - WEB API UYUMLU
+  Future<Map<String, dynamic>> deleteCompany({
+    required int companyId,
+  }) async {
+    try {
+      debugPrint('[COMPANY_API] Deleting company - ID: $companyId');
+
+      // 🎯 WEB API DELETE REQUEST BODY - EXACT MATCH
+      final requestBody = {
+        "tableId": 104,
+        "Id": companyId,
+        "form_ID": 3,
+        "form_PATH": "/Dyn/CompanyAdd/Detail/$companyId",
+      };
+
+      debugPrint('[COMPANY_API] 🔍 Delete request body: $requestBody');
+
+      final response = await ApiClient.post(
+        '/api/admin/DynamicFormApi/DeleteData',
+        body: requestBody,
       );
 
-      debugPrint('[COMPANY_API] Company saved successfully');
-      return response;
+      debugPrint('[COMPANY_API] 🔍 Delete response status: ${response.statusCode}');
+      debugPrint('[COMPANY_API] 🔍 Delete response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        // Web'de delete genelde empty response döner veya basit JSON
+        final data = response.body.isNotEmpty ? jsonDecode(response.body) : {'success': true, 'message': 'Firma başarıyla silindi'};
+
+        debugPrint('[COMPANY_API] ✅ Company deleted successfully');
+        return data;
+      } else {
+        throw Exception('HTTP ${response.statusCode}: ${response.body}');
+      }
     } catch (e) {
-      debugPrint('[COMPANY_API] Save error: $e');
-      rethrow;
+      debugPrint('[COMPANY_API] ❌ Delete error: $e');
+
+      String userMessage = 'Firma silinirken hata oluştu';
+
+      if (e.toString().contains('401')) {
+        userMessage = 'Oturum süresi dolmuş. Lütfen tekrar giriş yapın.';
+      } else if (e.toString().contains('403')) {
+        userMessage = 'Bu işlem için yetkiniz bulunmamaktadır.';
+      } else if (e.toString().contains('404')) {
+        userMessage = 'Silinecek firma bulunamadı.';
+      } else if (e.toString().contains('409')) {
+        userMessage = 'Bu firma bağlı kayıtlar olduğu için silinemez.';
+      } else if (e.toString().contains('500')) {
+        userMessage = 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.';
+      }
+
+      throw Exception(userMessage);
     }
+  }
+
+  /// 🆕 YENİ: Location data'yı forma dahil etme metodu
+  Map<String, dynamic> _prepareFormDataWithLocation(
+    Map<String, dynamic> formData,
+    String? locationCoordinates,
+    String? locationAddress,
+  ) {
+    final preparedData = Map<String, dynamic>.from(formData);
+
+    // Konum verilerini ekle
+    if (locationCoordinates != null && locationCoordinates.isNotEmpty) {
+      preparedData['Location'] = locationCoordinates;
+      debugPrint('[COMPANY_API] 📍 Added location: $locationCoordinates');
+    }
+
+    if (locationAddress != null && locationAddress.isNotEmpty) {
+      preparedData['MapAdress'] = locationAddress;
+      debugPrint('[COMPANY_API] 📍 Added address: $locationAddress');
+    }
+
+    // Dropdown values için _DDL suffix'li alanları temizle (web'de gerekmez)
+    final keysToRemove = <String>[];
+    for (final key in preparedData.keys) {
+      if (key.endsWith('_DDL') || key.endsWith('_AutoComplateText')) {
+        keysToRemove.add(key);
+      }
+    }
+
+    for (final key in keysToRemove) {
+      preparedData.remove(key);
+      debugPrint('[COMPANY_API] 🧹 Removed UI helper field: $key');
+    }
+
+    return preparedData;
+  }
+
+  /// 🆕 YENİ: Konum ile birlikte kaydetme metodu
+  Future<Map<String, dynamic>> saveCompanyWithLocation({
+    required Map<String, dynamic> formData,
+    int? companyId,
+    String? locationCoordinates,
+    String? locationAddress,
+  }) async {
+    final preparedData = _prepareFormDataWithLocation(
+      formData,
+      locationCoordinates,
+      locationAddress,
+    );
+
+    return await saveCompany(
+      formData: preparedData,
+      companyId: companyId,
+    );
   }
 
   /// 🆕 YENİ: Firma adreslerini getir
@@ -578,7 +770,6 @@ class CompanyApiService extends BaseApiService {
     }
   }
 
-  /// 🆕 YENİ: Firma adına göre company'yi bulup adreslerini getir
   /// 🆕 YENİ: Firma adına göre company'yi bulup adreslerini getir
   Future<List<CompanyAddress>> getCompanyAddressesByName(String companyName) async {
     try {

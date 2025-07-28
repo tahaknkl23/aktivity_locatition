@@ -1,4 +1,4 @@
-// lib/presentation/widgets/activity/form_content_widget.dart - FINAL CLEAN VERSION
+// lib/presentation/widgets/activity/form_content_widget.dart - PADDING FIXED
 import 'package:flutter/material.dart';
 import '../../../core/widgets/dynamic_form/dynamic_form_widget.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
@@ -71,24 +71,30 @@ class _FormContentWidgetState extends State<FormContentWidget> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isTablet = screenWidth > 600;
-    final padding = isTablet ? 24.0 : screenWidth * 0.04;
+    // 🔧 Padding'i azalt - header ile form arası boşluğu minimize et
+    final padding = isTablet ? 16.0 : 12.0; // Azaltıldı
+    final verticalSpacing = 8.0; // Minimum vertical spacing
 
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 🔧 Minimum top spacing - header'dan hemen sonra
+          SizedBox(height: verticalSpacing),
+
           // Address card widget
           if (widget.selectedAddress != null) ...[
             Padding(
-              padding: EdgeInsets.all(padding),
+              padding: EdgeInsets.symmetric(horizontal: padding),
               child: AddressCardWidget(selectedAddress: widget.selectedAddress!),
             ),
+            SizedBox(height: verticalSpacing), // Minimum spacing
           ],
 
           // Location comparison card
           if (widget.currentLocation != null) ...[
             Padding(
-              padding: EdgeInsets.all(padding),
+              padding: EdgeInsets.symmetric(horizontal: padding),
               child: UnifiedLocationWidget(
                 currentLocation: widget.currentLocation!,
                 locationComparison: widget.locationComparison,
@@ -96,6 +102,7 @@ class _FormContentWidgetState extends State<FormContentWidget> {
                 onRefreshLocation: widget.onRefreshLocation,
               ),
             ),
+            SizedBox(height: verticalSpacing), // Minimum spacing
           ],
 
           // ✅ FileUploadWidget - Sadece editing modda
@@ -114,19 +121,20 @@ class _FormContentWidgetState extends State<FormContentWidget> {
                 },
               ),
             ),
+            SizedBox(height: verticalSpacing), // Minimum spacing
           ],
 
-          // Main dynamic form - Padding ile (Expanded değil!)
+          // Main dynamic form - 🔧 Minimum padding
           Padding(
-            padding: EdgeInsets.all(padding),
+            padding: EdgeInsets.symmetric(horizontal: padding),
             child: DynamicFormWidget(
               formModel: widget.formModel,
               onFormChanged: widget.onFormChanged,
               onSave: null,
               isLoading: widget.isSaving,
               isEditing: widget.isEditing,
-              showHeader: false,
-              showActions: false,
+              showHeader: false, // 🔧 Header gizli (form başlığı)
+              showActions: false, // 🔧 Actions gizli (kaydet/sil butonları)
             ),
           ),
         ],

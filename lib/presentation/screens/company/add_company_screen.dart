@@ -35,8 +35,6 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
 
   bool get isEditing => widget.companyId != null && widget.companyId! > 0;
 
-// 1. _loadFormData() metodunu şununla değiştir:
-
   Future<void> _loadFormData() async {
     try {
       setState(() {
@@ -73,10 +71,6 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
       }
     }
   }
-
-// 2. Bu yeni metodu da ekle (sınıfın sonuna, _buildBody()'den önce):
-
-// Mevcut _loadDropdownOptionsAsync metodunu şununla değiştir:
 
   Future<void> _loadDropdownOptionsAsync(DynamicFormModel formModel) async {
     try {
@@ -184,58 +178,189 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
     debugPrint('[ADD_COMPANY] Form data updated: ${formData.keys.length} fields');
   }
 
+  /// 🔧 FIXED: Save/Update company method
   Future<void> _saveCompany() async {
     try {
       setState(() {
         _isSaving = true;
       });
 
-      debugPrint('[ADD_COMPANY] Saving company data...');
-      debugPrint('[ADD_COMPANY] Form data: ${_formData.keys.toList()}');
+      debugPrint('[ADD_COMPANY] 🚀 Starting ${isEditing ? 'update' : 'save'} process...');
+      debugPrint('[ADD_COMPANY] 🔍 Company ID: ${widget.companyId}');
+      debugPrint('[ADD_COMPANY] 🔍 Form data keys: ${_formData.keys.toList()}');
 
-      // Clean form data - remove null/empty values
-      final cleanedData = <String, dynamic>{};
+      // Debug: Form data içeriğini logla
       for (final entry in _formData.entries) {
-        if (entry.value != null && entry.value.toString().isNotEmpty) {
-          cleanedData[entry.key] = entry.value;
-        }
+        debugPrint('[ADD_COMPANY] 🔍 ${entry.key}: ${entry.value}');
       }
 
+      // 🎯 UNIFIED SAVE/UPDATE - API service'de karar verilecek
       final result = await _companyApiService.saveCompany(
-        formData: cleanedData,
-        companyId: widget.companyId,
+        formData: _formData,
+        companyId: widget.companyId, // null ise create, değilse update
       );
 
       if (mounted) {
-        debugPrint('[ADD_COMPANY] Save result: $result');
+        debugPrint('[ADD_COMPANY] ✅ ${isEditing ? 'Update' : 'Save'} successful: $result');
 
-        // Show success message
+        setState(() {
+          _isSaving = false;
+        });
+
+        // Başarı mesajı göster
         SnackbarHelper.showSuccess(
           context: context,
           message: isEditing ? 'Firma başarıyla güncellendi!' : 'Firma başarıyla kaydedildi!',
         );
 
-        // Wait a moment then go back
+        // Kısa süre bekle ve geri dön
         await Future.delayed(const Duration(milliseconds: 1500));
 
         if (mounted) {
-          Navigator.of(context).pop(true); // Return true to indicate success
+          // Geri dönerken success flag'i gönder
+          Navigator.of(context).pop(true);
         }
       }
     } catch (e) {
-      debugPrint('[ADD_COMPANY] Save error: $e');
+      debugPrint('[ADD_COMPANY] ❌ ${isEditing ? 'Update' : 'Save'} error: $e');
 
       if (mounted) {
         setState(() {
           _isSaving = false;
         });
 
+        // Error mesajı göster
         SnackbarHelper.showError(
           context: context,
-          message: 'Kaydetme sırasında hata oluştu: ${e.toString()}',
+          message: e.toString(),
         );
       }
     }
+  }
+
+  /// 🆕 YENİ: Delete company method
+  Future<void> _deleteCompany() async {
+    if (!isEditing) {
+      debugPrint('[ADD_COMPANY] ⚠️ Cannot delete - no company ID');
+      return;
+    }
+
+    try {
+      setState(() {
+        _isSaving = true;
+      });
+
+      debugPrint('[ADD_COMPANY] 🗑️ Starting delete process for ID: ${widget.companyId}');
+
+      final result = await _companyApiService.deleteCompany(
+        companyId: widget.companyId!,
+      );
+
+      if (mounted) {
+        debugPrint('[ADD_COMPANY] ✅ Delete successful: $result');
+
+        setState(() {
+          _isSaving = false;
+        });
+
+        // Başarı mesajı göster
+        SnackbarHelper.showSuccess(
+          context: context,
+          message: 'Firma başarıyla silindi!',
+        );
+
+        // Kısa süre bekle ve geri dön
+        await Future.delayed(const Duration(milliseconds: 1500));
+
+        if (mounted) {
+          // Geri dönerken success flag'i gönder (silme işlemi için)
+          Navigator.of(context).pop(true);
+        }
+      }
+    } catch (e) {
+      debugPrint('[ADD_COMPANY] ❌ Delete error: $e');
+
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+
+        // Error mesajı göster
+        SnackbarHelper.showError(
+          context: context,
+          message: e.toString(),
+        );
+      }
+    }
+  }
+
+  /// 🔧 UPDATED: Show delete confirmation dialog
+  void _showDeleteConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Silme Onayı'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Bu firmayı silmek istediğinizden emin misiniz?'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.warning.withValues(alpha: 0.3),
+                ),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber, color: AppColors.warning, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Bu işlem geri alınamaz!',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.warning,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _deleteCompany();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: AppColors.textOnPrimary,
+            ),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text('Sil'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -263,6 +388,7 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
       formModel: _formModel!,
       onFormChanged: _onFormDataChanged,
       onSave: _saveCompany,
+      onDelete: isEditing ? _showDeleteConfirmation : null, // 🔧 Delete callback eklendi
       isLoading: _isSaving,
       isEditing: isEditing,
     );

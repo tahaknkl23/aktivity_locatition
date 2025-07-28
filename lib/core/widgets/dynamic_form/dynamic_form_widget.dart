@@ -9,6 +9,7 @@ class DynamicFormWidget extends StatefulWidget {
   final DynamicFormModel formModel;
   final Function(Map<String, dynamic> formData) onFormChanged;
   final VoidCallback? onSave;
+  final VoidCallback? onDelete; // 🆕 Delete callback eklendi
   final bool isLoading;
   final bool isEditing;
   final bool showHeader; // 🆕 Header gösterme kontrolü
@@ -19,6 +20,7 @@ class DynamicFormWidget extends StatefulWidget {
     required this.formModel,
     required this.onFormChanged,
     this.onSave,
+    this.onDelete, // 🆕 Constructor'a eklendi
     this.isLoading = false,
     this.isEditing = false,
     this.showHeader = true, // Default true
@@ -72,6 +74,21 @@ class _DynamicFormWidgetState extends State<DynamicFormWidget> {
         const SnackBar(
           content: Text('Lütfen tüm zorunlu alanları doldurun'),
           backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  /// 🆕 YENİ: Delete handler - callback'e yönlendir
+  void _handleDelete() {
+    if (widget.onDelete != null) {
+      widget.onDelete!();
+    } else {
+      // Fallback - parent'ta handle edilmiyorsa
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Silme işlemi için parent widget\'ta handler tanımlanmalı'),
+          backgroundColor: AppColors.warning,
         ),
       );
     }
@@ -311,33 +328,34 @@ class _DynamicFormWidgetState extends State<DynamicFormWidget> {
         top: false,
         child: Row(
           children: [
-            // Cancel button
-            Expanded(
-              child: OutlinedButton(
-                onPressed: widget.isLoading ? null : () => Navigator.of(context).pop(),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.textSecondary),
-                  padding: EdgeInsets.symmetric(vertical: size.buttonHeight * 0.3),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(size.cardBorderRadius),
+            // Delete/Sil button - sadece edit mode'da ve callback varsa göster
+            if (widget.isEditing && widget.onDelete != null) ...[
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: widget.isLoading ? null : _handleDelete,
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppColors.error),
+                    padding: EdgeInsets.symmetric(vertical: size.buttonHeight * 0.3),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(size.cardBorderRadius),
+                    ),
                   ),
-                ),
-                child: Text(
-                  'İptal',
-                  style: TextStyle(
-                    fontSize: size.textSize,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w600,
+                  child: Text(
+                    'Sil',
+                    style: TextStyle(
+                      fontSize: size.textSize,
+                      color: AppColors.error,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
-            ),
+              SizedBox(width: size.mediumSpacing),
+            ],
 
-            SizedBox(width: size.mediumSpacing),
-
-            // Save button
+            // Save/Update button
             Expanded(
-              flex: 2,
+              flex: widget.isEditing && widget.onDelete != null ? 2 : 1, // Sil butonu varsa daha geniş
               child: ElevatedButton(
                 onPressed: widget.isLoading ? null : _handleSave,
                 style: ElevatedButton.styleFrom(
