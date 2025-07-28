@@ -8,7 +8,6 @@ import '../../../core/extensions/context_extensions.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../data/models/menu/menu_model.dart';
 import '../../../data/services/api/auth_service.dart';
-import '../../../presentation/screens/auth/login_screen.dart'; // ✅ LoginScreen import
 import '../../providers/menu_provider.dart';
 
 class MenuDrawer extends StatefulWidget {
@@ -483,51 +482,5 @@ class _MenuDrawerState extends State<MenuDrawer> {
         debugPrint('[MENU_DRAWER] ❌ Navigation also failed: $navError');
       }
     }
-  }
-
-  Future<bool> _showLogoutDialog() async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            icon: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.logout,
-                color: Colors.orange,
-                size: 32,
-              ),
-            ),
-            title: const Text(
-              'Çıkış Yap',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            content: const Text(
-              'Oturumunuzu sonlandırmak istediğinizden emin misiniz?',
-              textAlign: TextAlign.center,
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('İptal'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Çıkış Yap'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
   }
 }
