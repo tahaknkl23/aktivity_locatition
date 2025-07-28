@@ -59,7 +59,7 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
   LocationComparisonResult? _locationComparison;
 
   // 🆕 Branch support
-  CompanyBranchDetails? _selectedBranch;
+  CompanyBranchDetails? selectedBranch;
 
   @override
   void initState() {
@@ -200,7 +200,7 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
         _formData['ContactId'] = null;
         _formData['CompanyBranchId'] = null; // 🆕 Reset branch selection
         _formData['AddressId'] = null;
-        _selectedBranch = null; // 🆕 Clear selected branch
+        selectedBranch = null; // 🆕 Clear selected branch
         _locationComparison = null; // 🆕 Clear previous comparison
       });
 
@@ -316,7 +316,7 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
 
       if (branchDetails != null && mounted) {
         setState(() {
-          _selectedBranch = branchDetails;
+          selectedBranch = branchDetails;
         });
 
         SnackbarHelper.showSuccess(

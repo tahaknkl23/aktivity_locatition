@@ -5,6 +5,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/extensions/context_extensions.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../data/services/api/auth_service.dart';
+import '../../widgets/menu/menu_drawer.dart'; // ✅ Sadece bu import eklendi
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -122,6 +123,15 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: AppColors.primaryColor,
         foregroundColor: Colors.white,
         elevation: 0,
+        // ✅ Sadece bu kısım eklendi - hamburger menü
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+            tooltip: 'Menü',
+          ),
+        ),
+        // ✅ Burası aynı kaldı
         actions: [
           IconButton(
             onPressed: _handleLogout,
@@ -130,6 +140,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+      // ✅ Sadece bu satır eklendi
+      drawer: const MenuDrawer(),
+      // ✅ Aşağısı tamamen aynı
       body: SingleChildScrollView(
         padding: EdgeInsets.all(size.padding),
         child: Column(
@@ -263,7 +276,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: _buildActionCard(
                 icon: Icons.add_business,
                 title: 'Firma Ekle',
-                color: AppColors.primary,
+                color: AppColors.primaryColor,
                 onTap: () {
                   // Navigate to add company screen
                   Navigator.pushNamed(context, AppRoutes.addCompany);
@@ -276,7 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: _buildActionCard(
                 icon: Icons.assignment_add,
                 title: 'Aktivite Ekle',
-                color: AppColors.secondary,
+                color: AppColors.secondoryColor,
                 onTap: () {
                   Navigator.pushNamed(context, AppRoutes.addActivity);
                 },
@@ -377,7 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        SizedBox(height: size.smallIcon),
+        SizedBox(height: size.smallSpacing),
         Row(
           children: [
             Expanded(
@@ -401,30 +414,28 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        SizedBox(height: size.smallIcon),
-        Row(
-          children: [
-            Expanded(
-              child: _buildStatCard(
-                title: 'Bu Hafta Toplam Aktivite',
-                value: '10',
-                icon: Icons.business,
-                color: AppColors.primaryDark,
-                size: size,
-              ),
+        SizedBox(height: size.smallSpacing),
+        Row(children: [
+          Expanded(
+            child: _buildStatCard(
+              title: 'Bu Hafta Toplam Aktivite',
+              value: '10',
+              icon: Icons.business,
+              color: AppColors.primaryDark,
+              size: size,
             ),
-            SizedBox(width: size.mediumSpacing),
-            Expanded(
-              child: _buildStatCard(
-                title: 'Bu Hafta Kalan Aktivite',
-                value: '9',
-                icon: Icons.assignment,
-                color: AppColors.redColor,
-                size: size,
-              ),
+          ),
+          SizedBox(width: size.mediumSpacing),
+          Expanded(
+            child: _buildStatCard(
+              title: 'Bu Hafta Kalan Aktivite',
+              value: '9',
+              icon: Icons.assignment,
+              color: AppColors.redColor,
+              size: size,
             ),
-          ],
-        ),
+          ),
+        ]),
       ],
     );
   }

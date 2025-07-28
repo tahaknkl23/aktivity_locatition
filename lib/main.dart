@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart'; // ✅ Provider import eklendi
 
 // Enhanced session timeout imports
 import 'core/services/hybrid_session_timeout_service.dart';
@@ -8,6 +9,8 @@ import 'presentation/widgets/common/session_aware_widget.dart';
 import 'data/services/api/auth_service.dart';
 import 'core/routes/app_routes.dart';
 import 'core/utils/photo_url_helper.dart';
+import 'core/constants/app_colors.dart'; // ✅ App colors import
+import 'presentation/providers/menu_provider.dart'; // ✅ Menu provider import
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -110,6 +113,10 @@ class _MyAppState extends State<MyApp> {
     try {
       await _authService.logout();
 
+      // Menu provider'ı temizle
+      final menuProvider = _navigatorKey.currentContext?.read<MenuProvider>();
+      menuProvider?.clearMenu();
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final context = _navigatorKey.currentContext;
         if (context != null && mounted) {
@@ -169,26 +176,83 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      navigatorKey: _navigatorKey,
-      builder: (context, child) {
-        final mediaQuery = MediaQuery.of(context);
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => MenuProvider()),
+        // Diğer provider'lar buraya eklenebilir
+      ],
+      child: MaterialApp(
+        navigatorKey: _navigatorKey,
+        builder: (context, child) {
+          final mediaQuery = MediaQuery.of(context);
 
-        return SessionAwareWidget(
-          child: MediaQuery(
-            data: mediaQuery.copyWith(
-              textScaler: TextScaler.linear(
-                mediaQuery.textScaler.scale(1.0).clamp(0.8, 1.0),
+          return SessionAwareWidget(
+            child: MediaQuery(
+              data: mediaQuery.copyWith(
+                textScaler: TextScaler.linear(
+                  mediaQuery.textScaler.scale(1.0).clamp(0.8, 1.0),
+                ),
+              ),
+              child: child!,
+            ),
+          );
+        },
+        title: 'Veribis Crm',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
+          primaryColor: AppColors.primary,
+          scaffoldBackgroundColor: AppColors.background,
+          appBarTheme: AppBarTheme(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            centerTitle: true,
+          ),
+          elevatedButtonTheme: ElevatedButtonThemeData(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 12,
               ),
             ),
-            child: child!,
           ),
-        );
-      },
-      title: 'Veribis Crm',
-      debugShowCheckedModeBanner: false,
-      initialRoute: AppRoutes.onboarding,
-      onGenerateRoute: AppRoutes.generateRoute,
+          inputDecorationTheme: InputDecorationTheme(
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: AppColors.primary),
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 16,
+            ),
+          ),
+          cardTheme: CardTheme(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 2,
+            margin: const EdgeInsets.all(8),
+          ),
+        ),
+        initialRoute: AppRoutes.onboarding,
+        onGenerateRoute: AppRoutes.generateRoute,
+      ),
     );
   }
 }

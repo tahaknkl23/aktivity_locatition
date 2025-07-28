@@ -360,6 +360,8 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                             fontWeight: FontWeight.w500,
                           ),
                           decoration: InputDecoration(
+                            filled: true,
+                            fillColor: const Color(0xFF1F2937).withValues(alpha: 0.3),
                             hintText: isSmallScreen ? "domain.com" : "örn: mycompany.veribiscrm.com",
                             hintStyle: TextStyle(
                               color: Colors.white.withValues(alpha: 0.5),
