@@ -6,6 +6,7 @@ import 'package:aktivity_location_app/core/constants/app_strings.dart';
 import 'package:aktivity_location_app/core/extensions/context_extensions.dart';
 import 'package:aktivity_location_app/core/helpers/snackbar_helper.dart';
 import 'package:aktivity_location_app/core/routes/app_routes.dart';
+import 'package:aktivity_location_app/core/widgets/common/app_version_info_widget.dart';
 import 'package:aktivity_location_app/data/services/api/auth_service.dart';
 import 'package:aktivity_location_app/presentation/screens/auth/widgets/forgot_password.dart';
 import 'package:aktivity_location_app/presentation/screens/auth/widgets/login_background.dart';
@@ -410,32 +411,40 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: LoginBackground(
-        child: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                padding: EdgeInsets.only(
-                  left: isTablet ? size.padding * 2 : size.padding,
-                  right: isTablet ? size.padding * 2 : size.padding,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + (isTablet ? 32 : 24),
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight,
-                    // Tablet için max width using your dimensions
-                    maxWidth: isTablet ? 500 : double.infinity,
-                  ),
-                  child: isTablet
-                      ? Center(
-                          child: _buildLoginContent(size, logoSize, domainFontSize, linkFontSize, isSmallPhone, isTablet),
-                        )
-                      : IntrinsicHeight(
-                          child: _buildLoginContent(size, logoSize, domainFontSize, linkFontSize, isSmallPhone, isTablet),
-                        ),
-                ),
-              );
-            },
-          ),
+        child: Stack(
+          // 🆕 Stack ekledik
+          children: [
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    padding: EdgeInsets.only(
+                      left: isTablet ? size.padding * 2 : size.padding,
+                      right: isTablet ? size.padding * 2 : size.padding,
+                      bottom: MediaQuery.of(context).viewInsets.bottom + (isTablet ? 32 : 24),
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                        // Tablet için max width using your dimensions
+                        maxWidth: isTablet ? 500 : double.infinity,
+                      ),
+                      child: isTablet
+                          ? Center(
+                              child: _buildLoginContent(size, logoSize, domainFontSize, linkFontSize, isSmallPhone, isTablet),
+                            )
+                          : IntrinsicHeight(
+                              child: _buildLoginContent(size, logoSize, domainFontSize, linkFontSize, isSmallPhone, isTablet),
+                            ),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            // 🆕 Version bilgisi - sadece bu satır eklendi
+            AppVersionInfoWidget(isFloating: true),
+          ],
         ),
       ),
     );

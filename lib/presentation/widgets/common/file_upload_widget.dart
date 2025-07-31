@@ -87,10 +87,6 @@ class _FileUploadWidgetState extends State<FileUploadWidget> {
       debugPrint('[FILE_UPLOAD] ❌ Load files error: $e');
       if (mounted) {
         setState(() => _isLoading = false);
-        SnackbarHelper.showError(
-          context: context,
-          message: 'Dosyalar yüklenemedi: ${e.toString()}',
-        );
       }
     }
   }

@@ -1,3 +1,4 @@
+// api_client.dart - CRYPTO DEPENDENCY REMOVED
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -7,6 +8,10 @@ import '../../../core/services/session_timeout_service.dart';
 
 class ApiClient {
   static const Duration _timeout = Duration(minutes: 10);
+
+  // 🔥 REQUEST DEDUPLICATION - Aynı request'leri engelle (Simplified)
+  static final Map<String, DateTime> _recentRequests = {};
+  static const Duration _requestCooldown = Duration(seconds: 2);
 
   /// ✅ GÜVENLİ HEADER OLUŞTURMA
   static Future<Map<String, String>> _getHeaders() async {
@@ -58,9 +63,41 @@ class ApiClient {
     }
   }
 
-  /// ✅ GÜVENLİ POST REQUEST
+  /// 🔥 SIMPLE REQUEST HASH - No crypto dependency
+  static String _generateSimpleHash(String url, Map<String, dynamic>? body) {
+    final content = '$url${jsonEncode(body ?? {})}';
+    // Simple hash using string hashCode
+    return content.hashCode.toString();
+  }
+
+  /// 🔥 DUPLICATE REQUEST KONTROLÜ
+  static bool _isDuplicateRequest(String requestHash) {
+    final now = DateTime.now();
+
+    // Eski request'leri temizle
+    _recentRequests.removeWhere((hash, time) => now.difference(time) > _requestCooldown);
+
+    if (_recentRequests.containsKey(requestHash)) {
+      final lastRequest = _recentRequests[requestHash]!;
+      if (now.difference(lastRequest) < _requestCooldown) {
+        debugPrint('[API_CLIENT] 🚫 DUPLICATE REQUEST BLOCKED: $requestHash');
+        return true;
+      }
+    }
+
+    _recentRequests[requestHash] = now;
+    return false;
+  }
+
+  /// ✅ GÜVENLİ POST REQUEST - DUPLICATE PROTECTION
   static Future<http.Response> post(String endpoint, {Map<String, dynamic>? body}) async {
     try {
+      // 🔥 DUPLICATE REQUEST CHECK
+      final requestHash = _generateSimpleHash(endpoint, body);
+      if (_isDuplicateRequest(requestHash)) {
+        throw ApiException('Bu işlem çok sık tekrarlandı. Lütfen bekleyin.');
+      }
+
       // 🎯 SESSION REFRESH - Her API call'da
       SessionTimeoutService.instance.recordActivity();
 
@@ -101,9 +138,15 @@ class ApiClient {
     }
   }
 
-  /// ✅ GÜVENLİ GET REQUEST
+  /// ✅ GÜVENLİ GET REQUEST - DUPLICATE PROTECTION
   static Future<http.Response> get(String endpoint) async {
     try {
+      // 🔥 DUPLICATE REQUEST CHECK
+      final requestHash = _generateSimpleHash(endpoint, null);
+      if (_isDuplicateRequest(requestHash)) {
+        throw ApiException('Bu işlem çok sık tekrarlandı. Lütfen bekleyin.');
+      }
+
       // 🎯 SESSION REFRESH - Her API call'da
       SessionTimeoutService.instance.recordActivity();
 
@@ -151,6 +194,14 @@ class ApiClient {
         throw ApiException('Bu işlem için yetkiniz bulunmuyor.');
       case 404:
         throw ApiException('İstenen kaynak bulunamadı.');
+      case 405:
+        throw ApiException('Bu işlem desteklenmiyor.');
+      case 409:
+        throw ApiException('Bu kayıt başka bir işlemde kullanılıyor.');
+      case 422:
+        throw ApiException('Gönderilen veriler hatalı. Lütfen kontrol edin.');
+      case 429:
+        throw ApiException('Çok fazla istek gönderildi. Lütfen bekleyin.');
       case 500:
         throw ApiException('Sunucu hatası. Lütfen daha sonra tekrar deneyin.');
       case 502:
@@ -197,6 +248,24 @@ class ApiClient {
       debugPrint('[API_CLIENT] Subdomain check error: $e');
       return false;
     }
+  }
+
+  /// 🔧 REQUEST CACHE'İ TEMİZLE (debugging için)
+  static void clearRequestCache() {
+    _recentRequests.clear();
+    debugPrint('[API_CLIENT] Request cache cleared');
+  }
+
+  /// 📊 CACHE İSTATİSTİKLERİ
+  static Map<String, dynamic> getCacheStats() {
+    final now = DateTime.now();
+    final activeRequests = _recentRequests.values.where((time) => now.difference(time) < _requestCooldown).length;
+
+    return {
+      'total_cached': _recentRequests.length,
+      'active_blocks': activeRequests,
+      'cooldown_seconds': _requestCooldown.inSeconds,
+    };
   }
 }
 

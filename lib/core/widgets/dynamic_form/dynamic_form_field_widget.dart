@@ -5,6 +5,7 @@ import '../../../core/constants/app_sizes.dart';
 import '../../../core/helpers/validators.dart';
 import '../../../core/widgets/real_map_location_picker.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
+import '../../../core/widgets/common/searchable_dropdown_widget.dart'; // 🆕 Import
 
 /// Dynamic form field widget that renders different field types
 class DynamicFormFieldWidget extends StatefulWidget {
@@ -119,7 +120,8 @@ class _DynamicFormFieldWidgetState extends State<DynamicFormFieldWidget> {
             ),
           ),
         ),
-        if (widget.field.isRequired)
+        // 🔧 Dropdown için zorunlu işareti gösterme - kullanıcı deneyimi için
+        if (widget.field.isRequired && widget.field.type != FormFieldType.dropdown)
           Text(
             ' *',
             style: TextStyle(
@@ -224,6 +226,7 @@ class _DynamicFormFieldWidgetState extends State<DynamicFormFieldWidget> {
     );
   }
 
+  // 🎯 YENİ SEARCHABLE DROPDOWN - Eski dropdown yerine
   Widget _buildDropdownField(AppSizes size) {
     // Ensure current value exists in options or set to null
     dynamic validValue = _currentValue;
@@ -235,37 +238,21 @@ class _DynamicFormFieldWidgetState extends State<DynamicFormFieldWidget> {
       }
     }
 
-    return DropdownButtonFormField<dynamic>(
+    // 🆕 Searchable dropdown kullan - zorunluluk kaldırıldı
+    return SearchableDropdownWidget(
+      label: widget.field.label,
+      hint: 'Seçiniz...',
+      options: widget.field.options ?? [],
       value: validValue,
-      decoration: _buildInputDecoration(size),
-      hint: Text(
-        'Seçiniz...',
-        style: TextStyle(
-          fontSize: size.textSize,
-          color: AppColors.textSecondary,
-        ),
-      ),
-      items: widget.field.options?.map((option) {
-            return DropdownMenuItem<dynamic>(
-              value: option.value,
-              child: Text(
-                option.text,
-                style: TextStyle(fontSize: size.textSize),
-                overflow: TextOverflow.ellipsis,
-              ),
-            );
-          }).toList() ??
-          [],
       onChanged: widget.field.isEnabled
           ? (value) {
-              debugPrint('[DynamicFormField] Dropdown changed: ${widget.field.key} = $value');
+              debugPrint('[DynamicFormField] Searchable dropdown changed: ${widget.field.key} = $value');
               _onValueChanged(value);
             }
-          : null,
-      validator: widget.field.isRequired ? (value) => value == null ? '${widget.field.label} seçimi zorunludur' : null : null,
-      style: TextStyle(fontSize: size.textSize, color: AppColors.textPrimary),
-      dropdownColor: AppColors.surface,
-      isExpanded: true,
+          : (value) {},
+      isRequired: false, // 🔧 Zorunlu olmaktan çıkardık
+      isEnabled: widget.field.isEnabled,
+      validator: null, // 🔧 Validasyon kaldırıldı
     );
   }
 
@@ -401,7 +388,7 @@ class _DynamicFormFieldWidgetState extends State<DynamicFormFieldWidget> {
     return InkWell(
       onTap: widget.field.isEnabled ? () => _openMapSelector(context) : null,
       child: Container(
-        height: 140, // 120'den 140'a çıkardık
+        height: 140,
         decoration: BoxDecoration(
           color: AppColors.inputBackground,
           borderRadius: BorderRadius.circular(size.formFieldBorderRadius),
@@ -417,7 +404,7 @@ class _DynamicFormFieldWidgetState extends State<DynamicFormFieldWidget> {
       padding: EdgeInsets.all(size.cardPadding),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min, // Bu satırı ekledik
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
@@ -454,7 +441,6 @@ class _DynamicFormFieldWidgetState extends State<DynamicFormFieldWidget> {
           ),
           SizedBox(height: size.tinySpacing),
           Flexible(
-            // Text'i Flexible ile sardık
             child: Text(
               location.address,
               style: TextStyle(
@@ -473,7 +459,7 @@ class _DynamicFormFieldWidgetState extends State<DynamicFormFieldWidget> {
               color: AppColors.textSecondary,
               fontFamily: 'monospace',
             ),
-            maxLines: 1, // Tek satır
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ],

@@ -8,23 +8,25 @@ import 'dynamic_form_field_widget.dart';
 class DynamicFormWidget extends StatefulWidget {
   final DynamicFormModel formModel;
   final Function(Map<String, dynamic> formData) onFormChanged;
+  final Future<void> Function(String fieldKey, dynamic value)? onFieldDependencyChanged; // 🆕 Bağımlılık callback'i
   final VoidCallback? onSave;
-  final VoidCallback? onDelete; // 🆕 Delete callback eklendi
+  final VoidCallback? onDelete;
   final bool isLoading;
   final bool isEditing;
-  final bool showHeader; // 🆕 Header gösterme kontrolü
-  final bool showActions; // 🆕 Alt buton gösterme kontrolü
+  final bool showHeader;
+  final bool showActions;
 
   const DynamicFormWidget({
     super.key,
     required this.formModel,
     required this.onFormChanged,
+    this.onFieldDependencyChanged, // 🆕 Yeni parameter
     this.onSave,
-    this.onDelete, // 🆕 Constructor'a eklendi
+    this.onDelete,
     this.isLoading = false,
     this.isEditing = false,
-    this.showHeader = true, // Default true
-    this.showActions = true, // Default true
+    this.showHeader = true,
+    this.showActions = true,
   });
 
   @override
@@ -58,37 +60,210 @@ class _DynamicFormWidgetState extends State<DynamicFormWidget> {
     setState(() {
       _formData[key] = value;
     });
+
+    // 🔧 Field dependency kontrolü - Firma değiştiğinde şube temizle
+    _handleFieldDependency(key, value);
+
     widget.onFormChanged(_formData);
     debugPrint('[DynamicForm] Field changed: $key = $value');
+  }
+
+  /// 🎯 Field bağımlılık yönetimi
+  void _handleFieldDependency(String changedFieldKey, dynamic newValue) {
+    // 🔧 SADECE FİRMA ALANI DEĞİŞTİĞİNDE ÇALIŞ - Şube, kişi vb alanları ignore et
+    if (changedFieldKey.toLowerCase() == 'companyid' ||
+        (changedFieldKey.toLowerCase().contains('company') &&
+            !changedFieldKey.toLowerCase().contains('branch') &&
+            !changedFieldKey.toLowerCase().contains('sube') &&
+            !changedFieldKey.toLowerCase().contains('şube'))) {
+      debugPrint('[DynamicForm] 🏢 Firma değişti: $changedFieldKey = $newValue');
+
+      // Şube ile ilgili tüm alanları bul ve temizle
+      final branchFields = widget.formModel.sections
+          .expand((section) => section.fields)
+          .where((field) =>
+              field.key.toLowerCase().contains('sube') ||
+              field.key.toLowerCase().contains('şube') ||
+              field.key.toLowerCase().contains('branch') ||
+              field.key.toLowerCase().contains('companybranch'))
+          .toList();
+
+      for (final branchField in branchFields) {
+        if (_formData.containsKey(branchField.key)) {
+          setState(() {
+            _formData[branchField.key] = null;
+          });
+          debugPrint('[DynamicForm] 🏪 Şube alanı temizlendi: ${branchField.key}');
+        }
+      }
+
+      // Parent'a bildir ki yeni şube seçenekleri yüklensin
+      if (widget.onFieldDependencyChanged != null) {
+        widget.onFieldDependencyChanged!(changedFieldKey, newValue);
+      }
+    }
+
+    // 🔧 SADECE ŞEHİR ALANI DEĞİŞTİĞİNDE ÇALIŞ - İlçe için
+    else if (changedFieldKey.toLowerCase() == 'cityid' ||
+        (changedFieldKey.toLowerCase().contains('city') &&
+            !changedFieldKey.toLowerCase().contains('district') &&
+            !changedFieldKey.toLowerCase().contains('ilçe'))) {
+      final districtFields = widget.formModel.sections
+          .expand((section) => section.fields)
+          .where((field) => field.key.toLowerCase().contains('district') || field.key.toLowerCase().contains('ilçe'))
+          .toList();
+
+      for (final districtField in districtFields) {
+        if (_formData.containsKey(districtField.key)) {
+          setState(() {
+            _formData[districtField.key] = null;
+          });
+          debugPrint('[DynamicForm] 🏘️ İlçe alanı temizlendi: ${districtField.key}');
+        }
+      }
+
+      if (widget.onFieldDependencyChanged != null) {
+        widget.onFieldDependencyChanged!(changedFieldKey, newValue);
+      }
+    }
+
+    // 🔧 DİĞER ALANLAR İÇİN HİÇBİR ŞEY YAPMA
+    else {
+      debugPrint('[DynamicForm] ⚪ Field ignored for dependency: $changedFieldKey');
+    }
   }
 
   bool _validateForm() {
     return _formKey.currentState?.validate() ?? false;
   }
 
+  /// 💾 SAVE BUTTON İŞLEYİŞİ - GELİŞTİRİLMİŞ VERSİYON
   void _handleSave() {
-    if (_validateForm()) {
-      widget.onSave?.call();
-    } else {
+    debugPrint('[DynamicForm] 💾 SAVE BUTTON CLICKED');
+    debugPrint('[DynamicForm] 📊 Current form data: ${_formData.keys.toList()}');
+
+    // 1. FORM VALİDASYONU
+    if (!_validateForm()) {
+      debugPrint('[DynamicForm] ❌ Form validation failed');
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Lütfen tüm zorunlu alanları doldurun'),
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.error_outline, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Lütfen tüm zorunlu alanları doldurun',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
           backgroundColor: AppColors.error,
+          duration: Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    debugPrint('[DynamicForm] ✅ Form validation passed');
+
+    // 2. PARENT CALLBACK'E GÖNDERİ
+    if (widget.onSave != null) {
+      debugPrint('[DynamicForm] 🚀 Calling parent save callback...');
+      widget.onSave!();
+    } else {
+      debugPrint('[DynamicForm] ❌ No save callback provided!');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.warning_outlined, color: Colors.white),
+              SizedBox(width: 12),
+              Text(
+                'Save işlemi tanımlanmamış',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.warning,
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     }
   }
 
-  /// 🆕 YENİ: Delete handler - callback'e yönlendir
+  /// 🗑️ DELETE BUTTON İŞLEYİŞİ - GELİŞTİRİLMİŞ VERSİYON
   void _handleDelete() {
+    debugPrint('[DynamicForm] 🗑️ DELETE BUTTON CLICKED');
+
     if (widget.onDelete != null) {
-      widget.onDelete!();
+      // Onay dialogu göster
+      showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.delete_outline, color: AppColors.error),
+              SizedBox(width: 12),
+              Text('Silme Onayı'),
+            ],
+          ),
+          content: Text(
+            'Bu ${widget.formModel.formName.toLowerCase()}ı silmek istediğinizden emin misiniz?\n\nBu işlem geri alınamaz.',
+            style: TextStyle(fontSize: 16),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(
+                'İptal',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: Colors.white,
+              ),
+              child: Text('Sil'),
+            ),
+          ],
+        ),
+      ).then((shouldDelete) {
+        if (shouldDelete == true) {
+          debugPrint('[DynamicForm] 🗑️ Delete confirmed, calling parent callback...');
+          widget.onDelete!();
+        } else {
+          debugPrint('[DynamicForm] ↩️ Delete cancelled');
+        }
+      });
     } else {
-      // Fallback - parent'ta handle edilmiyorsa
+      debugPrint('[DynamicForm] ❌ No delete callback provided!');
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Silme işlemi için parent widget\'ta handler tanımlanmalı'),
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.warning_outlined, color: Colors.white),
+              SizedBox(width: 12),
+              Text(
+                'Silme işlemi tanımlanmamış',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
           backgroundColor: AppColors.warning,
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     }

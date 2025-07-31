@@ -1,20 +1,23 @@
-// activity_api_service.dart - DÜZELTİLMİŞ VERSİYON
-import 'package:aktivity_location_app/core/services/location_service.dart';
-import 'package:aktivity_location_app/data/services/api/company_api_service.dart';
+// activity_api_service.dart - TEMİZ TAM VERSİYON
 import 'package:flutter/material.dart';
+import '../../../core/services/location_service.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
-import '../../models/activity/activity_list_model.dart';
+import '../../../data/models/activity/activity_list_model.dart';
+import '../../../data/services/api/company_api_service.dart';
 import 'base_api_service.dart';
 import 'api_client.dart';
 
 /// Activity API service for handling activity-related operations
 class ActivityApiService extends BaseApiService {
+  // ===================
+  // FORM OPERATIONS
+  // ===================
+
   /// Load activity form structure for add/edit operations
   Future<DynamicFormModel> loadActivityForm({int? activityId}) async {
     try {
       debugPrint('[ACTIVITY_API] 📋 Loading activity form for activity ID: $activityId');
 
-      // Direkt AktiviteBranchAdd kullan - Server kullanıcıya göre field'ları ayarlayacak
       final response = await getFormWithData(
         controller: 'AktiviteBranchAdd',
         url: '/Dyn/AktiviteBranchAdd/Detail',
@@ -25,118 +28,10 @@ class ActivityApiService extends BaseApiService {
       debugPrint('[ACTIVITY_API] ✅ Form loaded: ${formModel.formName}');
       debugPrint('[ACTIVITY_API] 📊 Sections count: ${formModel.sections.length}');
 
-      // Field analizi yap
-      final allFields = <String>[];
-      bool hasCompanyBranchId = false;
-      bool hasCarId = false;
-      bool hasKm = false;
-
-      for (final section in formModel.sections) {
-        debugPrint('[ACTIVITY_API] 📋 Section: ${section.label} (${section.fields.length} fields)');
-
-        for (final field in section.fields) {
-          allFields.add(field.key);
-
-          if (field.key == 'CompanyBranchId') {
-            hasCompanyBranchId = true;
-            debugPrint('[ACTIVITY_API] 🎯 ŞUBE ALANI BULUNDU: ${field.label}');
-          }
-
-          if (field.key == 'CarId') {
-            hasCarId = true;
-            debugPrint('[ACTIVITY_API] 🚗 ARAÇ ALANI BULUNDU: ${field.label}');
-          }
-
-          if (field.key == 'Km') {
-            hasKm = true;
-            debugPrint('[ACTIVITY_API] 📏 KM ALANI BULUNDU: ${field.label}');
-          }
-        }
-      }
-
-      debugPrint('[ACTIVITY_API] 📊 USER FORM SUMMARY:');
-      debugPrint('[ACTIVITY_API] 📊 Total fields: ${allFields.length}');
-      debugPrint('[ACTIVITY_API] 📊 Has CompanyBranchId: $hasCompanyBranchId');
-      debugPrint('[ACTIVITY_API] 📊 Has CarId: $hasCarId');
-      debugPrint('[ACTIVITY_API] 📊 Has Km: $hasKm');
-
       return formModel;
     } catch (e) {
       debugPrint('[ACTIVITY_API] ❌ Load activity form error: $e');
       rethrow;
-    }
-  }
-
-  /// 🆕 Şirket şubelerini yükle (CompanyBranchId için)
-  Future<List<DropdownOption>> loadCompanyBranches({
-    required int companyId,
-  }) async {
-    try {
-      debugPrint('[ACTIVITY_API] Loading branches for company: $companyId');
-
-      final requestBody = {
-        "model": {
-          "Parameters": [
-            {"Name": "@Id", "Type": 2, "Value": companyId},
-          ],
-          "model": {"Adres3": "", "Id": ""},
-          "culture": "tr",
-          "form_PATH": "/Dyn/AktiviteBranchAdd/Detail",
-          "type": "DropDownList",
-          "apiUrl": null,
-          "controller": "AktiviteBranchAdd",
-          "revisionNo": null,
-          "dataId": null,
-          "valueName": "DropDownList"
-        },
-        "take": 50,
-        "skip": 0,
-        "page": 1,
-        "pageSize": 50,
-        "filter": {"logic": "and", "filters": []}
-      };
-
-      final response = await ApiClient.post(
-        '/api/admin/DynamicFormApi/GetReadReport/9883',
-        body: requestBody,
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final dataList = data['Data'] as List? ?? [];
-
-        debugPrint('[ACTIVITY_API] ✅ Company branches loaded: ${dataList.length} items');
-
-        return dataList
-            .map((item) => DropdownOption(
-                  value: item['Id'],
-                  text: item['Adres3'] as String? ?? 'İsimsiz Şube',
-                ))
-            .where((item) => item.text.isNotEmpty && item.text != 'İsimsiz Şube')
-            .toList();
-      } else {
-        debugPrint('[ACTIVITY_API] ⚠️ Branch API failed: ${response.statusCode}');
-        return [];
-      }
-    } catch (e) {
-      debugPrint('[ACTIVITY_API] Load company branches error: $e');
-      return [];
-    }
-  }
-
-  /// 🆕 Şube detaylarını al (koordinat bilgisi için)
-  Future<CompanyBranchDetails?> getBranchDetails({
-    required int companyId,
-    required int branchId,
-  }) async {
-    try {
-      debugPrint('[ACTIVITY_API] Getting branch details - Company: $companyId, Branch: $branchId');
-
-      // TODO: Branch detail API implementation
-      return null;
-    } catch (e) {
-      debugPrint('[ACTIVITY_API] Get branch details error: $e');
-      return null;
     }
   }
 
@@ -146,28 +41,81 @@ class ActivityApiService extends BaseApiService {
     int? activityId,
   }) async {
     try {
-      debugPrint('[ACTIVITY_API] Saving activity - ID: $activityId');
-      debugPrint('[ACTIVITY_API] Form data keys: ${formData.keys.toList()}');
+      debugPrint('[ACTIVITY_API] 💾 SAVING ACTIVITY - ID: $activityId');
+      debugPrint('[ACTIVITY_API] 📊 Form data keys: ${formData.keys.toList()}');
+
+      final webFormData = _convertToWebFormat(formData, activityId);
+
+      debugPrint('[ACTIVITY_API] 🌐 Web format data prepared');
 
       final response = await ApiClient.post(
         '/api/admin/DynamicFormApi/InsertData',
-        body: formData,
+        body: webFormData,
       );
+
+      debugPrint('[ACTIVITY_API] 📡 Response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
-        debugPrint('[ACTIVITY_API] Activity saved successfully');
+        debugPrint('[ACTIVITY_API] ✅ Save successful');
+
+        final newId = result['Data']?['Id'] as int?;
+        if (newId != null) {
+          debugPrint('[ACTIVITY_API] 🆔 New Activity ID: $newId');
+        }
+
         return result;
       } else {
-        throw Exception('Save failed: ${response.statusCode}');
+        debugPrint('[ACTIVITY_API] ❌ Save failed: ${response.statusCode}');
+        throw Exception('Save failed: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
-      debugPrint('[ACTIVITY_API] Save error: $e');
+      debugPrint('[ACTIVITY_API] ❌ Save error: $e');
       rethrow;
     }
   }
 
-  /// Universal dropdown loader
+  /// Close activity
+  Future<Map<String, dynamic>> closeActivity({
+    required int activityId,
+    required String currentLocation,
+  }) async {
+    try {
+      debugPrint('[ACTIVITY_API] 🔒 CLOSING ACTIVITY: $activityId');
+      debugPrint('[ACTIVITY_API] 📍 Location: $currentLocation');
+
+      final closeData = {
+        "tableId": 102,
+        "Id": activityId,
+        "form_ID": 5895,
+        "form_PATH": "/Dyn/AktiviteBranchAdd/Detail/$activityId",
+        "EndLocation": currentLocation,
+        "OpenOrClose": "0",
+      };
+
+      final response = await ApiClient.post(
+        '/api/admin/DynamicFormApi/UpdateData',
+        body: closeData,
+      );
+
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        debugPrint('[ACTIVITY_API] ✅ Activity closed successfully');
+        return result;
+      } else {
+        throw Exception('Close failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] ❌ Close activity error: $e');
+      rethrow;
+    }
+  }
+
+  // ===================
+  // DROPDOWN OPERATIONS
+  // ===================
+
+  /// Load dropdown options
   Future<List<DropdownOption>> loadDropdownOptions({
     required String sourceType,
     required dynamic sourceValue,
@@ -181,25 +129,21 @@ class ActivityApiService extends BaseApiService {
       if (sourceType == '4') {
         // Group source handling
         final endpoints = [
-          () async {
-            return await ApiClient.get('/api/admin/DynamicFormApi/GetCategory/$sourceValue');
-          },
-          () async {
-            return await ApiClient.post(
-              '/api/admin/DynamicFormApi/GetCategory/$sourceValue',
-              body: {
-                "model": {
-                  "Parameters": [],
-                  "model": {"Text": "", "Value": ""},
-                  "culture": "tr",
-                  "form_PATH": "/Dyn/AktiviteBranchAdd/Detail",
-                  "type": "DropDownList",
-                  "controller": "AktiviteBranchAdd",
+          () async => await ApiClient.get('/api/admin/DynamicFormApi/GetCategory/$sourceValue'),
+          () async => await ApiClient.post(
+                '/api/admin/DynamicFormApi/GetCategory/$sourceValue',
+                body: {
+                  "model": {
+                    "Parameters": [],
+                    "model": {"Text": "", "Value": ""},
+                    "culture": "tr",
+                    "form_PATH": "/Dyn/AktiviteBranchAdd/Detail",
+                    "type": "DropDownList",
+                    "controller": "AktiviteBranchAdd",
+                  },
+                  "filter": {"logic": "and", "filters": []}
                 },
-                "filter": {"logic": "and", "filters": []}
-              },
-            );
-          },
+              ),
         ];
 
         for (int i = 0; i < endpoints.length; i++) {
@@ -314,7 +258,82 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  /// Firma konum bilgisini al
+  /// Load company branches
+  Future<List<DropdownOption>> loadCompanyBranches({
+    required int companyId,
+  }) async {
+    try {
+      debugPrint('[ACTIVITY_API] Loading branches for company: $companyId');
+
+      final requestBody = {
+        "model": {
+          "Parameters": [
+            {"Name": "@Id", "Type": 2, "Value": companyId},
+          ],
+          "model": {"Adres3": "", "Id": ""},
+          "culture": "tr",
+          "form_PATH": "/Dyn/AktiviteBranchAdd/Detail",
+          "type": "DropDownList",
+          "apiUrl": null,
+          "controller": "AktiviteBranchAdd",
+          "revisionNo": null,
+          "dataId": null,
+          "valueName": "DropDownList"
+        },
+        "take": 50,
+        "skip": 0,
+        "page": 1,
+        "pageSize": 50,
+        "filter": {"logic": "and", "filters": []}
+      };
+
+      final response = await ApiClient.post(
+        '/api/admin/DynamicFormApi/GetReadReport/9883',
+        body: requestBody,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final dataList = data['Data'] as List? ?? [];
+
+        debugPrint('[ACTIVITY_API] ✅ Company branches loaded: ${dataList.length} items');
+
+        return dataList
+            .map((item) => DropdownOption(
+                  value: item['Id'],
+                  text: item['Adres3'] as String? ?? 'İsimsiz Şube',
+                ))
+            .where((item) => item.text.isNotEmpty && item.text != 'İsimsiz Şube')
+            .toList();
+      } else {
+        debugPrint('[ACTIVITY_API] ⚠️ Branch API failed: ${response.statusCode}');
+        return [];
+      }
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Load company branches error: $e');
+      return [];
+    }
+  }
+
+  /// Get branch details (placeholder - implement when API ready)
+  Future<CompanyBranchDetails?> getBranchDetails({
+    required int companyId,
+    required int branchId,
+  }) async {
+    try {
+      debugPrint('[ACTIVITY_API] Getting branch details - Company: $companyId, Branch: $branchId');
+      return null;
+    } catch (e) {
+      debugPrint('[ACTIVITY_API] Get branch details error: $e');
+      return null;
+    }
+  }
+
+  // ===================
+  // LOCATION OPERATIONS
+  // ===================
+
+  /// Get company location
   Future<LocationData?> getCompanyLocation(int companyId) async {
     try {
       final response = await ApiClient.post(
@@ -359,7 +378,7 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  /// Konum kıyaslaması yap
+  /// Compare locations
   Future<LocationComparisonResult> compareLocations({
     required int companyId,
     required double currentLat,
@@ -421,7 +440,11 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  /// ✅ GÜNCELLENMIŞ: Aktivite listesini getirir - ŞUBE DESTEKLİ
+  // ===================
+  // ACTIVITY LIST OPERATIONS
+  // ===================
+
+  /// Get activity list
   Future<ActivityListResponse> getActivityList({
     required ActivityFilter filter,
     int page = 1,
@@ -472,24 +495,7 @@ class ActivityApiService extends BaseApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-
         debugPrint('[ACTIVITY_API] ✅ Response received for filter: $filter');
-
-        if (data['DataSourceResult'] != null && data['DataSourceResult']['Data'] != null) {
-          final activities = data['DataSourceResult']['Data'] as List;
-          debugPrint('[ACTIVITY_API] 📊 Found ${activities.length} activities');
-
-          if (activities.isNotEmpty) {
-            final firstActivity = activities.first;
-            debugPrint('[ACTIVITY_API] 🔍 Sample: ID=${firstActivity['Id']}, Sube="${firstActivity['Sube']}", Konum="${firstActivity['Konum']}"');
-          }
-
-          final activitiesWithSube = activities.where((act) => act['Sube'] != null && act['Sube'].toString().isNotEmpty).length;
-          final activitiesWithKonum = activities.where((act) => act['Konum'] != null && act['Konum'].toString().isNotEmpty).length;
-          debugPrint('[ACTIVITY_API] 🏢 Activities with Sube: $activitiesWithSube/${activities.length}');
-          debugPrint('[ACTIVITY_API] 📍 Activities with Konum: $activitiesWithKonum/${activities.length}');
-        }
-
         return ActivityListResponse.fromJson(data);
       } else {
         throw Exception('Failed to load activity list: ${response.statusCode}');
@@ -500,28 +506,28 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  /// 🆕 ENHANCED: Aktivite listesini adres bilgileriyle zenginleştir (ŞUBE ÖNCE)
+  /// Enrich activities with address information (BRANCH FIRST)
   Future<List<ActivityListItem>> enrichActivitiesWithAddressesByName(List<ActivityListItem> activities) async {
     final enrichedActivities = <ActivityListItem>[];
 
     debugPrint('[ACTIVITY_API] 🔍 Starting enrichment for ${activities.length} activities');
 
     for (final activity in activities) {
-      // 🎯 1. ÖNCE ŞUBE BİLGİSİ VAR MI KONTROL ET
+      // 1. Check if branch info already exists
       if (activity.hasSube) {
         debugPrint('[ACTIVITY_API] 🏢 Activity already has Sube info: ${activity.sube}');
-        enrichedActivities.add(activity); // Şube varsa enrichment'a gerek yok
+        enrichedActivities.add(activity); // No enrichment needed if branch exists
         continue;
       }
 
-      // 🎯 2. ŞUBE YOKSA ADRES ENRİCHMENT YAPMAYI DENE
+      // 2. Try address enrichment if no branch info
       if (activity.firma != null && activity.firma!.isNotEmpty) {
         try {
           final companyApiService = CompanyApiService();
           final addresses = await companyApiService.getCompanyAddressesByName(activity.firma!);
 
           if (addresses.isNotEmpty) {
-            // AKILLI ADRES SEÇİMİ
+            // Smart address selection
             CompanyAddress selectedAddress;
 
             final anaAdres = addresses.where((addr) => addr.tipi?.toLowerCase().contains('ana') == true).toList();
@@ -538,20 +544,20 @@ class ActivityApiService extends BaseApiService {
               selectedAddress = addresses.first;
             }
 
-            // ENRİCHED AKTİVİTE OLUŞTUR
+            // Create enriched activity
             final enriched = ActivityListItem(
               id: activity.id,
               tipi: activity.tipi,
               konu: activity.konu,
               firma: activity.firma,
               kisi: activity.kisi,
-              sube: activity.sube, // Mevcut şube bilgisini koru
-              konum: activity.konum, // 🆕 Koordinat bilgisini koru
+              sube: activity.sube, // Keep existing branch info
+              konum: activity.konum, // Keep coordinate info
               baslangic: activity.baslangic,
-              bitis: activity.bitis, // Bitiş bilgisini koru
+              bitis: activity.bitis, // Keep end info
               temsilci: activity.temsilci,
               detay: activity.detay,
-              // Seçilen adres bilgileri ekle
+              // Add selected address info
               kisaAdres: selectedAddress.kisaAdres,
               acikAdres: selectedAddress.acikAdres,
               il: selectedAddress.il,
@@ -582,6 +588,10 @@ class ActivityApiService extends BaseApiService {
 
     return enrichedActivities;
   }
+
+  // ===================
+  // ADDRESS OPERATIONS
+  // ===================
 
   /// Get activity address options
   Future<List<DropdownOption>> getActivityAddressOptions({
@@ -615,41 +625,80 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  /// 🎯 TEST METHOD: JSON response'unu test et
-  Future<void> testActivityListResponse() async {
-    try {
-      debugPrint('[ACTIVITY_API] 🧪 TESTING ACTIVITY LIST RESPONSE...');
+  // ===================
+  // PRIVATE HELPER METHODS
+  // ===================
 
-      final openActivities = await getActivityList(
-        filter: ActivityFilter.open,
-        page: 1,
-        pageSize: 5,
-      );
+  /// Convert form data to web format
+  Map<String, dynamic> _convertToWebFormat(Map<String, dynamic> formData, int? activityId) {
+    final webData = <String, dynamic>{
+      // Form metadata
+      "form_REV": false,
+      "form_ID": 5895,
+      "form_PATH": "/Dyn/AktiviteBranchAdd/Detail",
+      "IsCloneRecord": false,
+      "tableId": 102,
+      "Id": activityId ?? 0,
 
-      debugPrint('[ACTIVITY_API] 🧪 OPEN ACTIVITIES TEST:');
-      debugPrint('[ACTIVITY_API] 📊 Total: ${openActivities.total}');
-      debugPrint('[ACTIVITY_API] 📊 Loaded: ${openActivities.data.length}');
+      // Main fields
+      "CompanyId": formData['CompanyId'],
+      "CompanyBranchId": formData['CompanyBranchId'],
+      "ContactId": formData['ContactId'],
+      "Subject": formData['Subject'],
+      "StartDate": formData['StartDate'],
+      "EndDate": formData['EndDate'],
+      "Notes": formData['Notes'],
+      "ActivityType": formData['ActivityType'],
+      "Priority": formData['Priority'],
+      "CarId": formData['CarId'],
+      "Km": formData['Km'],
+      "OpenOrClose": formData['OpenOrClose'] ?? "1",
+      "AppointedUserId": formData['AppointedUserId'],
+      "LastPrintFormat": formData['LastPrintFormat'] ?? "24",
+      "OpportunityId": formData['OpportunityId'],
+      "Saha1": formData['Saha1'],
+      "Serial": formData['Serial'],
+      "BasicId": formData['BasicId'],
 
-      for (int i = 0; i < openActivities.data.length && i < 3; i++) {
-        final activity = openActivities.data[i];
-        debugPrint('[ACTIVITY_API] 🧪 Activity $i:');
-        debugPrint('[ACTIVITY_API]   ID: ${activity.id}');
-        debugPrint('[ACTIVITY_API]   Tipi: ${activity.tipi}');
-        debugPrint('[ACTIVITY_API]   Firma: ${activity.firma}');
-        debugPrint('[ACTIVITY_API]   Sube: ${activity.sube}');
-        debugPrint('[ACTIVITY_API]   Konum: ${activity.konum}');
-        debugPrint('[ACTIVITY_API]   HasSube: ${activity.hasSube}');
-        debugPrint('[ACTIVITY_API]   HasKonum: ${activity.hasKonum}');
-        debugPrint('[ACTIVITY_API]   HasValidCoordinates: ${activity.hasValidCoordinates}');
-        debugPrint('[ACTIVITY_API]   TimeRange: ${activity.timeRange}');
-      }
-    } catch (e) {
-      debugPrint('[ACTIVITY_API] ❌ TEST FAILED: $e');
+      // Dropdown metadata (empty objects)
+      "CompanyId_AutoComplateText": {},
+      "CompanyBranchId_AutoComplateText": {},
+      "ContactId_AutoComplateText": {},
+      "LastPrintFormat_AutoComplateText": {},
+      "OpportunityId_AutoComplateText": {},
+      "AppointedUserId_AutoComplateText": {},
+      "ActivityType_AutoComplateText": {},
+      "Priority_AutoComplateText": {},
+      "CarId_AutoComplateText": {},
+
+      // Contacts array
+      "ActivityContacts": _buildActivityContacts(formData),
+      "ActivityContacts_DDL": [null],
+
+      // Dropdown values
+      "DropText_CompanyId": "0",
+      "DropText_ContactId": "0",
+    };
+
+    // Remove null values
+    webData.removeWhere((key, value) => value == null);
+    return webData;
+  }
+
+  /// Build activity contacts array
+  List<dynamic> _buildActivityContacts(Map<String, dynamic> formData) {
+    final contactId = formData['ContactId'];
+    if (contactId != null) {
+      return [contactId];
     }
+    return [];
   }
 }
 
-// ENUMS VE CLASS'LAR
+// ===================
+// ENUMS AND CLASSES
+// ===================
+
 enum ActivityFilter { open, closed, all }
 
 enum LocationComparisonStatus {

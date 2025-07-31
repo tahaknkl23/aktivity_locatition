@@ -314,9 +314,6 @@ class _ActivityFileManagerWidgetState extends State<ActivityFileManagerWidget> {
         ),
       );
 
-      // TODO: FileService.instance.getFileViewUrl implementasyonunu kontrol et
-      // final imageUrl = await FileService.instance.getFileViewUrl(file);
-
       if (mounted) {
         Navigator.pop(context); // Close loading
 
@@ -325,17 +322,6 @@ class _ActivityFileManagerWidgetState extends State<ActivityFileManagerWidget> {
           context: context,
           message: 'Resim görüntüleme özelliği geliştiriliyor...',
         );
-
-        /* TODO: Image viewer implementation
-        if (imageUrl != null) {
-          _showImageDialog(file, imageUrl);
-        } else {
-          SnackbarHelper.showError(
-            context: context,
-            message: 'Resim yüklenemedi',
-          );
-        }
-        */
       }
     } catch (e) {
       if (mounted) {
@@ -383,14 +369,7 @@ class _ActivityFileManagerWidgetState extends State<ActivityFileManagerWidget> {
     if (!shouldDelete) return;
 
     try {
-      // TODO: FileService.instance.deleteActivityFile implementasyonunu kontrol et
-      // final response = await FileService.instance.deleteActivityFile(
-      //   file: file,
-      //   activityId: widget.savedActivityId!,
-      //   tableId: 102,
-      // );
-
-      // Geçici olarak sadece listeden kaldır
+   
       widget.onFileDeleted(file);
 
       SnackbarHelper.showSuccess(
@@ -398,17 +377,6 @@ class _ActivityFileManagerWidgetState extends State<ActivityFileManagerWidget> {
         message: 'Dosya listeden kaldırıldı (API bağlantısı gerekli)',
       );
 
-      /* TODO: Real delete implementation
-      if (response.isSuccess) {
-        widget.onFileDeleted(file);
-        SnackbarHelper.showSuccess(
-          context: context,
-          message: 'Dosya başarıyla silindi',
-        );
-      } else {
-        throw Exception('Delete failed: Dosya silinemedi');
-      }
-      */
     } catch (e) {
       debugPrint('[FILE_MANAGER] Delete error: $e');
       SnackbarHelper.showError(

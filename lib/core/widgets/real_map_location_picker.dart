@@ -57,19 +57,23 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
         final lat = double.parse(parts[0].trim());
         final lng = double.parse(parts[1].trim());
 
-        setState(() {
-          _selectedLocation = MapLocationData(
-            latitude: lat,
-            longitude: lng,
-            address: 'Seçilen konum',
-            coordinates: coordinates,
-          );
-        });
+        if (mounted) {
+          setState(() {
+            _selectedLocation = MapLocationData(
+              latitude: lat,
+              longitude: lng,
+              address: 'Seçilen konum',
+              coordinates: coordinates,
+            );
+          });
 
-        // Haritayı başlangıç konumuna taşı
-        Future.delayed(Duration(milliseconds: 100), () {
-          _mapController.move(LatLng(lat, lng), 15.0);
-        });
+          // Haritayı başlangıç konumuna taşı
+          Future.delayed(Duration(milliseconds: 100), () {
+            if (mounted) {
+              _mapController.move(LatLng(lat, lng), 15.0);
+            }
+          });
+        }
       }
     } catch (e) {
       debugPrint('Invalid initial coordinates: $coordinates');
@@ -77,6 +81,8 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
   }
 
   Future<void> _getCurrentLocation() async {
+    if (!mounted) return;
+
     setState(() {
       _isGettingCurrentLocation = true;
     });
@@ -101,6 +107,8 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
         timeLimit: Duration(seconds: 10),
       );
 
+      if (!mounted) return;
+
       final location = MapLocationData(
         latitude: position.latitude,
         longitude: position.longitude,
@@ -120,15 +128,21 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
 
       _showSuccessMessage('✅ Mevcut konum alındı');
     } catch (e) {
-      _showErrorMessage('❌ Konum alınamadı: ${e.toString()}');
+      if (mounted) {
+        _showErrorMessage('❌ Konum alınamadı: ${e.toString()}');
+      }
     } finally {
-      setState(() {
-        _isGettingCurrentLocation = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isGettingCurrentLocation = false;
+        });
+      }
     }
   }
 
   Future<void> _onMapTapped(LatLng position) async {
+    if (!mounted) return;
+
     setState(() {
       _isLoading = true;
       _showSearchResults = false;
@@ -140,6 +154,8 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
         position.latitude,
         position.longitude,
       );
+
+      if (!mounted) return;
 
       final location = MapLocationData(
         latitude: position.latitude,
@@ -153,10 +169,12 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      _showErrorMessage('Adres alınamadı: ${e.toString()}');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        _showErrorMessage('Adres alınamadı: ${e.toString()}');
+      }
     }
   }
 
@@ -202,11 +220,13 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
   }
 
   Future<void> _searchLocation(String query) async {
-    if (query.trim().isEmpty) {
-      setState(() {
-        _searchResults = [];
-        _showSearchResults = false;
-      });
+    if (!mounted || query.trim().isEmpty) {
+      if (mounted) {
+        setState(() {
+          _searchResults = [];
+          _showSearchResults = false;
+        });
+      }
       return;
     }
 
@@ -237,6 +257,8 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
         },
       );
 
+      if (!mounted) return;
+
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
 
@@ -246,25 +268,31 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
             .where((result) => result.displayName.toLowerCase().contains('türkiye') || result.displayName.toLowerCase().contains('turkey'))
             .toList();
 
-        setState(() {
-          _searchResults = results;
-          _showSearchResults = results.isNotEmpty;
-        });
+        if (mounted) {
+          setState(() {
+            _searchResults = results;
+            _showSearchResults = results.isNotEmpty;
+          });
 
-        // Eğer hiç sonuç yoksa, daha geniş arama yap
-        if (results.isEmpty && !searchQuery.contains('türkiye')) {
-          _searchLocationFallback(query);
+          // Eğer hiç sonuç yoksa, daha geniş arama yap
+          if (results.isEmpty && !searchQuery.contains('türkiye')) {
+            _searchLocationFallback(query);
+          }
         }
       }
     } catch (e) {
       debugPrint('Search error: $e');
       // Hata durumunda basit arama dene
-      _searchLocationFallback(query);
+      if (mounted) {
+        _searchLocationFallback(query);
+      }
     }
   }
 
   // Fallback arama metodu
   Future<void> _searchLocationFallback(String query) async {
+    if (!mounted) return;
+
     try {
       final url = 'https://nominatim.openstreetmap.org/search'
           '?format=json'
@@ -280,14 +308,18 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
         },
       );
 
+      if (!mounted) return;
+
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         final results = data.map((item) => SearchResult.fromJson(item)).toList();
 
-        setState(() {
-          _searchResults = results;
-          _showSearchResults = results.isNotEmpty;
-        });
+        if (mounted) {
+          setState(() {
+            _searchResults = results;
+            _showSearchResults = results.isNotEmpty;
+          });
+        }
       }
     } catch (e) {
       debugPrint('Fallback search error: $e');
@@ -295,6 +327,8 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
   }
 
   void _selectSearchResult(SearchResult result) {
+    if (!mounted) return;
+
     final location = MapLocationData(
       latitude: result.lat,
       longitude: result.lon,
@@ -314,6 +348,8 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
   }
 
   void _clearLocation() {
+    if (!mounted) return;
+
     setState(() {
       _selectedLocation = null;
     });
@@ -425,7 +461,7 @@ class _RealMapLocationPickerState extends State<RealMapLocationPicker> {
                     // 2 karakterden sonra ara
                     if (value.length >= 2) {
                       _searchLocation(value);
-                    } else {
+                    } else if (mounted) {
                       setState(() {
                         _searchResults = [];
                         _showSearchResults = false;

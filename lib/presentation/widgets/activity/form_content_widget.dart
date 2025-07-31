@@ -1,4 +1,4 @@
-// lib/presentation/widgets/activity/form_content_widget.dart - PADDING FIXED
+// lib/presentation/widgets/activity/form_content_widget.dart - COMPLETE VERSION
 import 'package:flutter/material.dart';
 import '../../../core/widgets/dynamic_form/dynamic_form_widget.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
@@ -29,6 +29,8 @@ class FormContentWidget extends StatefulWidget {
   final VoidCallback onRefreshLocation;
   // ✅ Handler registration callback
   final Function(VoidCallback, VoidCallback)? onRegisterHandlers;
+  // 🆕 Field dependency callback - DÜZELTME (nullable Future fonksiyon)
+  final Future<void> Function(String fieldKey, dynamic value)? onFieldDependencyChanged;
 
   const FormContentWidget({
     super.key,
@@ -46,6 +48,7 @@ class FormContentWidget extends StatefulWidget {
     required this.onFileUploaded,
     required this.onRefreshLocation,
     this.onRegisterHandlers,
+    this.onFieldDependencyChanged, // 🆕 EKLENDI (nullable)
   });
 
   @override
@@ -105,8 +108,8 @@ class _FormContentWidgetState extends State<FormContentWidget> {
             SizedBox(height: verticalSpacing), // Minimum spacing
           ],
 
-          // ✅ FileUploadWidget - Sadece editing modda
-          if (widget.isEditing) ...[
+          // ✅ FileUploadWidget - Sadece editing modda VE activity kaydedilmişse
+          if (widget.isEditing && widget.savedActivityId != null) ...[
             Padding(
               padding: EdgeInsets.symmetric(horizontal: padding),
               child: FileUploadWidget(
@@ -130,6 +133,7 @@ class _FormContentWidgetState extends State<FormContentWidget> {
             child: DynamicFormWidget(
               formModel: widget.formModel,
               onFormChanged: widget.onFormChanged,
+              onFieldDependencyChanged: widget.onFieldDependencyChanged, // 🆕 EKLENDI (nullable callback)
               onSave: null,
               isLoading: widget.isSaving,
               isEditing: widget.isEditing,
