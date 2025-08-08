@@ -23,7 +23,10 @@ class CompanyListScreen extends StatefulWidget {
 
 class _CompanyListScreenState extends State<CompanyListScreen> with ListStateMixin {
   final CompanyApiService _companyApiService = CompanyApiService();
+
   List<CompanyListItem> _companies = [];
+  List<CompanyListItem> _allCompanies = []; // TÜM FİRMALARI SAKLA
+  int _apiTotalCount = 0; // API'den gelen toplam sayı
 
   @override
   void initState() {
@@ -31,73 +34,105 @@ class _CompanyListScreenState extends State<CompanyListScreen> with ListStateMix
     loadItems();
   }
 
+  // FİLTRELEME İŞLEMİ
+  void _applySearch() {
+    List<CompanyListItem> filteredCompanies = _allCompanies;
+
+    if (searchQuery.isNotEmpty) {
+      filteredCompanies = _allCompanies.where((company) {
+        final companyName = company.firma.toLowerCase();
+        final searchLower = searchQuery.toLowerCase();
+        return companyName.contains(searchLower);
+      }).toList();
+
+      debugPrint('[COMPANY_LIST] 🔍 Firma filter: "$searchQuery"');
+      debugPrint('[COMPANY_LIST] 📊 Results: ${filteredCompanies.length}/${_allCompanies.length}');
+      debugPrint('[COMPANY_LIST] 📊 Cache: ${_allCompanies.length} / API Total: $_apiTotalCount');
+    }
+
+    setState(() {
+      _companies = filteredCompanies;
+
+      if (searchQuery.isNotEmpty) {
+        // Search'te gösterilen sonuç sayısı
+        totalCount = filteredCompanies.length;
+        // Eğer cache'deki veri API'nin toplam verisinden azsa, daha fazla yüklenebilir
+        hasMoreData = _allCompanies.length < _apiTotalCount;
+      } else {
+        // Normal durumda
+        totalCount = _apiTotalCount;
+        hasMoreData = _allCompanies.length < _apiTotalCount;
+      }
+    });
+  }
+
+  // SEARCH DEĞİŞTİĞİNDE SADECE FİLTRELE, API ÇAĞIRMA
+  @override
+  void onSearchChanged(String query) {
+    setState(() {
+      searchQuery = query;
+    });
+    _applySearch();
+  }
+
+  @override
+  void onClearSearch() {
+    searchController.clear();
+    setState(() {
+      searchQuery = '';
+    });
+    _applySearch();
+  }
+
   @override
   Future<void> loadItems({bool isRefresh = false}) async {
-    if (isRefresh) resetPagination();
+    if (isRefresh) {
+      resetPagination();
+      _allCompanies.clear();
+    }
+
     showLoadingState(isRefresh: isRefresh);
 
     try {
+      // ⬅️ ÇOK BÜYÜK pageSize KULLAN
       final result = await _companyApiService.getCompanyList(
-        page: currentPage,
-        pageSize: pageSize,
-        searchQuery: searchQuery.isNotEmpty ? searchQuery : null,
+        page: 1,
+        pageSize: 999999, // ⬅️ ÇOK BÜYÜK SAYI = TÜM VERİLER
+        searchQuery: null,
       );
+
+      debugPrint('[COMPANY_API] 📥 BULK DATA LOADED: ${result.data.length} companies received, total: ${result.total}');
 
       if (mounted) {
         setState(() {
-          if (isRefresh || currentPage == 1) {
-            _companies = result.data;
-          } else {
-            _companies.addAll(result.data);
-          }
-
-          totalCount = result.total;
-          hasMoreData = _companies.length < totalCount;
+          _allCompanies = result.data;
+          _apiTotalCount = result.total;
+          hasMoreData = false;
           isLoading = false;
           errorMessage = null;
+          currentPage = 1;
         });
+
+        // Debug: Cache durumu
+        print('📊 [COMPANY_CACHE] TOPLU YÜKLENDİ: ${_allCompanies.length}/$_apiTotalCount firma');
+
+        _applySearch();
       }
     } catch (e) {
       if (mounted) {
         setError(e.toString());
-        if (isRefresh || currentPage == 1) {
-          SnackbarHelper.showError(
-            context: context,
-            message: 'Firmalar yüklenirken hata oluştu: ${e.toString()}',
-          );
-        }
+        SnackbarHelper.showError(
+          context: context,
+          message: 'Firmalar yüklenirken hata oluştu: ${e.toString()}',
+        );
       }
     }
   }
 
   @override
   Future<void> loadMoreItems() async {
-    if (isLoadingMore || !hasMoreData) return;
-
-    showLoadingMoreState();
-
-    try {
-      final result = await _companyApiService.getCompanyList(
-        page: currentPage,
-        pageSize: pageSize,
-        searchQuery: searchQuery.isNotEmpty ? searchQuery : null,
-      );
-
-      if (mounted) {
-        setState(() {
-          _companies.addAll(result.data);
-          hasMoreData = _companies.length < result.total;
-          isLoadingMore = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          currentPage--;
-          isLoadingMore = false;
-        });
-      }
-    }
+    // ⬅️ TÜM VERİ ZATEN YÜKLENDİ, PAGINATION YOK
+    return;
   }
 
   void _onCompanyTap(CompanyListItem company) {
@@ -144,14 +179,16 @@ class _CompanyListScreenState extends State<CompanyListScreen> with ListStateMix
         children: [
           SearchBarWidget(
             controller: searchController,
-            hintText: 'Firma ara...',
+            hintText: 'Firma adına göre ara...',
             onChanged: onSearchChanged,
             onClear: onClearSearch,
             hasValue: searchQuery.isNotEmpty,
           ),
           StatsBarWidget(
             icon: Icons.business,
-            text: '${_companies.length}${totalCount > _companies.length ? '+' : ''} / $totalCount Firma',
+            text: searchQuery.isNotEmpty
+                ? '${_companies.length} sonuç (${_allCompanies.length}/$_apiTotalCount yüklendi)'
+                : '${_companies.length}${totalCount > _companies.length ? '+' : ''} / $totalCount Firma',
             iconColor: AppColors.primary,
             isLoading: isLoading || isLoadingMore,
           ),

@@ -140,7 +140,7 @@ class DynamicFormField {
     }
   }
 
-  bool get isVisible => !isMasterControl && type != FormFieldType.hidden;
+  bool get isVisible => true;
 }
 
 /// Form field types supported by the dynamic form
@@ -234,9 +234,23 @@ class DynamicFormSection {
 
   factory DynamicFormSection.fromJson(Map<String, dynamic> json) {
     try {
+      // 🔍 DEBUG: Raw JSON kontrolü
+      debugPrint('[FORM_SECTION] 🔍 Raw JSON keys: ${json.keys.toList()}');
+      debugPrint('[FORM_SECTION] 🔍 Fields key exists: ${json.containsKey('Fields')}');
+
       final fieldsJson = json['Fields'] as List? ?? [];
-      final fields =
-          fieldsJson.whereType<Map<String, dynamic>>().map((field) => DynamicFormField.fromJson(field)).where((field) => field.isVisible).toList();
+      debugPrint('[FORM_SECTION] 🔍 Fields count in JSON: ${fieldsJson.length}');
+
+      // Parse fields
+      final fields = fieldsJson.whereType<Map<String, dynamic>>().map((field) {
+        debugPrint('[FORM_SECTION] 🔍 Parsing field: ${field.keys.toList()}');
+        return DynamicFormField.fromJson(field);
+      }).where((field) {
+        debugPrint('[FORM_SECTION] 🔍 Field visible check: ${field.label} -> ${field.isVisible}');
+        return field.isVisible;
+      }).toList();
+
+      debugPrint('[FORM_SECTION] 🔍 Final fields count: ${fields.length}');
 
       return DynamicFormSection(
         label: json['label'] as String? ?? '',
@@ -245,9 +259,9 @@ class DynamicFormSection {
         orderIndex: json['OrderIndex'] as int? ?? 0,
       );
     } catch (e) {
-      debugPrint('[FormSection] Parse error: $e');
+      debugPrint('[FORM_SECTION] ❌ Parse error: $e');
       return DynamicFormSection(
-        label: 'Unknown Section',
+        label: 'Parse Error',
         width: 12,
         fields: [],
         orderIndex: 0,

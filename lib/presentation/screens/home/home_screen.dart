@@ -1,11 +1,17 @@
+// lib/presentation/screens/home/home_screen.dart - CLEAN VERSION
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/extensions/context_extensions.dart';
 import '../../../core/routes/app_routes.dart';
 import '../../../data/services/api/auth_service.dart';
-import '../../widgets/menu/menu_drawer.dart'; // ✅ Sadece bu import eklendi
+import '../../providers/dashboard_provider.dart';
+import '../../widgets/menu/menu_drawer.dart';
+import '../../widgets/home/welcome_card_widget.dart';
+import '../../widgets/home/quick_actions_widget.dart';
+import '../../widgets/home/statistics_section_widget.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,6 +29,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadUserInfo();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadDashboardDataSafely();
+    });
   }
 
   Future<void> _loadUserInfo() async {
@@ -35,10 +44,18 @@ class _HomeScreenState extends State<HomeScreen> {
         _userName = name;
         _userDomain = subdomain.isNotEmpty ? '$subdomain.veribiscrm.com' : '';
       });
-
-      debugPrint('[HOME] Loaded user: $name, domain: $_userDomain');
     } catch (e) {
       debugPrint('[HOME] Error loading user info: $e');
+    }
+  }
+
+  void _loadDashboardDataSafely() {
+    try {
+      if (mounted) {
+        context.read<DashboardProvider>().loadDashboardData();
+      }
+    } catch (e) {
+      debugPrint('[HOME] ❌ Error loading dashboard: $e');
     }
   }
 
@@ -48,7 +65,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       await _authService.logout();
-
       if (mounted) {
         context.showSuccessSnackBar('Başarıyla çıkış yapıldı');
         context.pushNamedAndRemoveUntil(AppRoutes.login);
@@ -64,29 +80,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            icon: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.logout,
-                color: Colors.orange,
-                size: 32,
-              ),
-            ),
-            title: const Text(
-              'Çıkış Yap',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            content: const Text(
-              'Oturumunuzu sonlandırmak istediğinizden emin misiniz?',
-              textAlign: TextAlign.center,
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Çıkış Yap'),
+            content: const Text('Oturumunuzu sonlandırmak istediğinizden emin misiniz?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -94,10 +90,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                ),
                 child: const Text('Çıkış Yap'),
               ),
             ],
@@ -113,26 +105,30 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text(
-          'Veribis CRM',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        title: const Text('Veribis CRM', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         backgroundColor: AppColors.primaryColor,
         foregroundColor: Colors.white,
         elevation: 0,
-        // ✅ Sadece bu kısım eklendi - hamburger menü
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-            tooltip: 'Menü',
-          ),
-        ),
-        // ✅ Burası aynı kaldı
         actions: [
+          Consumer<DashboardProvider>(
+            builder: (context, provider, child) {
+              return IconButton(
+                onPressed: provider.isLoading ? null : () => provider.loadDashboardData(forceRefresh: true),
+                icon: provider.isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Icon(Icons.refresh),
+                tooltip: 'Yenile',
+              );
+            },
+          ),
           IconButton(
             onPressed: _handleLogout,
             icon: const Icon(Icons.logout),
@@ -140,356 +136,34 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      // ✅ Sadece bu satır eklendi
       drawer: const MenuDrawer(),
-      // ✅ Aşağısı tamamen aynı
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(size.padding),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Welcome Card
-            _buildWelcomeCard(size),
-
-            SizedBox(height: size.largeSpacing),
-
-            // Quick Actions
-            _buildQuickActions(size),
-
-            SizedBox(height: size.largeSpacing),
-
-            // Statistics Cards
-            _buildStatisticsCards(size),
-
-            SizedBox(height: size.largeSpacing),
-
-            // Recent Activities
-            //_buildRecentActivities(size),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWelcomeCard(AppSizes size) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(size.cardPadding),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.primaryColor,
-            AppColors.primaryColor.withValues(alpha: 0.8),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(size.cardBorderRadius),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryColor.withValues(alpha: 0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      body: RefreshIndicator(
+        onRefresh: () => context.read<DashboardProvider>().loadDashboardData(forceRefresh: true),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(size.padding),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 30,
-                backgroundColor: Colors.white.withValues(alpha: 0.2),
-                child: Icon(
-                  Icons.person,
-                  size: 30,
-                  color: Colors.white,
-                ),
+              // Welcome Card
+              WelcomeCardWidget(
+                userName: _userName,
+                userDomain: _userDomain,
               ),
-              SizedBox(width: size.mediumSpacing),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Hoş Geldiniz',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        fontSize: size.smallText,
-                      ),
-                    ),
-                    Text(
-                      _userName,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: size.mediumText,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    if (_userDomain.isNotEmpty) ...[
-                      SizedBox(height: size.tinySpacing),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _userDomain,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: size.smallText * 0.9,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+              SizedBox(height: size.largeSpacing),
+
+              // Quick Actions
+              QuickActionsWidget(
+                onFirmaEkle: () => Navigator.pushNamed(context, AppRoutes.addCompany),
+                onAktiviteEkle: () => Navigator.pushNamed(context, AppRoutes.addActivity),
               ),
+              SizedBox(height: size.largeSpacing),
+
+              // Statistics Section
+              const StatisticsSectionWidget(),
+              SizedBox(height: size.largeSpacing),
             ],
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickActions(AppSizes size) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Hızlı İşlemler',
-          style: TextStyle(
-            fontSize: size.mediumText,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
         ),
-        SizedBox(height: size.mediumSpacing),
-        Row(
-          children: [
-            Expanded(
-              child: _buildActionCard(
-                icon: Icons.add_business,
-                title: 'Firma Ekle',
-                color: AppColors.primaryColor,
-                onTap: () {
-                  // Navigate to add company screen
-                  Navigator.pushNamed(context, AppRoutes.addCompany);
-                },
-                size: size,
-              ),
-            ),
-            SizedBox(width: size.mediumSpacing),
-            Expanded(
-              child: _buildActionCard(
-                icon: Icons.assignment_add,
-                title: 'Aktivite Ekle',
-                color: AppColors.secondoryColor,
-                onTap: () {
-                  Navigator.pushNamed(context, AppRoutes.addActivity);
-                },
-                size: size,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildActionCard({
-    required IconData icon,
-    required String title,
-    required Color color,
-    required VoidCallback onTap,
-    required AppSizes size,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.all(size.cardPadding),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(size.cardBorderRadius),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 5,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                size: 32,
-                color: color,
-              ),
-            ),
-            SizedBox(height: size.smallSpacing),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: size.smallText,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatisticsCards(AppSizes size) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'İstatistikler',
-          style: TextStyle(
-            fontSize: size.mediumText,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        SizedBox(height: size.mediumSpacing),
-        Row(
-          children: [
-            Expanded(
-              child: _buildStatCard(
-                title: 'Bugün Toplam Aktivite',
-                value: '2',
-                icon: Icons.business,
-                color: AppColors.info,
-                size: size,
-              ),
-            ),
-            SizedBox(width: size.mediumSpacing),
-            Expanded(
-              child: _buildStatCard(
-                title: 'Bugün Kalan Aktivite',
-                value: '1',
-                icon: Icons.assignment,
-                color: AppColors.success,
-                size: size,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: size.smallSpacing),
-        Row(
-          children: [
-            Expanded(
-              child: _buildStatCard(
-                title: 'Yarın Toplam Aktivite',
-                value: '4',
-                icon: Icons.business,
-                color: AppColors.hardalColor,
-                size: size,
-              ),
-            ),
-            SizedBox(width: size.mediumSpacing),
-            Expanded(
-              child: _buildStatCard(
-                title: 'Yarın Kalan Aktivite',
-                value: '4',
-                icon: Icons.assignment,
-                color: Colors.purple,
-                size: size,
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: size.smallSpacing),
-        Row(children: [
-          Expanded(
-            child: _buildStatCard(
-              title: 'Bu Hafta Toplam Aktivite',
-              value: '10',
-              icon: Icons.business,
-              color: AppColors.primaryDark,
-              size: size,
-            ),
-          ),
-          SizedBox(width: size.mediumSpacing),
-          Expanded(
-            child: _buildStatCard(
-              title: 'Bu Hafta Kalan Aktivite',
-              value: '9',
-              icon: Icons.assignment,
-              color: AppColors.redColor,
-              size: size,
-            ),
-          ),
-        ]),
-      ],
-    );
-  }
-
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required IconData icon,
-    required Color color,
-    required AppSizes size,
-  }) {
-    return Container(
-      padding: EdgeInsets.all(size.cardPadding),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(size.cardBorderRadius),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 5,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Icon(
-                icon,
-                color: color,
-                size: 24,
-              ),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: size.largeText,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: size.smallSpacing),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: size.smallText,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
       ),
     );
   }

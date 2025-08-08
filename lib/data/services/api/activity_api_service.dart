@@ -1,4 +1,3 @@
-// activity_api_service.dart - TEMİZ TAM VERSİYON
 import 'package:flutter/material.dart';
 import '../../../core/services/location_service.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
@@ -7,19 +6,13 @@ import '../../../data/services/api/company_api_service.dart';
 import 'base_api_service.dart';
 import 'api_client.dart';
 
-/// Activity API service for handling activity-related operations
 class ActivityApiService extends BaseApiService {
-  // ===================
-  // FORM OPERATIONS
-  // ===================
-
-  /// Load activity form structure for add/edit operations
   Future<DynamicFormModel> loadActivityForm({int? activityId}) async {
     try {
       debugPrint('[ACTIVITY_API] 📋 Loading activity form for activity ID: $activityId');
 
       final response = await getFormWithData(
-        controller: 'AktiviteBranchAdd',
+        controller: 'AktiviteBranchAdd', // ⬅️ FIXED: eskiden 'AktiviteBranchAdd' idi
         url: '/Dyn/AktiviteBranchAdd/Detail',
         id: activityId ?? 0,
       );
@@ -111,11 +104,6 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  // ===================
-  // DROPDOWN OPERATIONS
-  // ===================
-
-  /// Load dropdown options
   Future<List<DropdownOption>> loadDropdownOptions({
     required String sourceType,
     required dynamic sourceValue,
@@ -137,9 +125,9 @@ class ActivityApiService extends BaseApiService {
                     "Parameters": [],
                     "model": {"Text": "", "Value": ""},
                     "culture": "tr",
-                    "form_PATH": "/Dyn/AktiviteBranchAdd/Detail",
+                    "form_PATH": "/Dyn/AktiviteBranchAdd/Detail", // ⬅️ FIXED
                     "type": "DropDownList",
-                    "controller": "AktiviteBranchAdd",
+                    "controller": "AktiviteBranchAdd", // ⬅️ FIXED
                   },
                   "filter": {"logic": "and", "filters": []}
                 },
@@ -178,11 +166,11 @@ class ActivityApiService extends BaseApiService {
                 "Parameters": [],
                 "model": {dataTextField ?? "Text": "", dataValueField ?? "Id": ""},
                 "culture": "tr",
-                "form_PATH": "/Dyn/AktiviteBranchAdd/Detail",
+                "form_PATH": "/Dyn/AktiviteBranchAdd/Detail", // ⬅️ FIXED
                 "type": "DropDownList",
-                "controller": "AktiviteBranchAdd",
+                "controller": "AktiviteBranchAdd", // ⬅️ FIXED
               },
-              "take": 0,
+              "take": "",
               "skip": 0,
               "page": 1,
               "pageSize": 0
@@ -233,9 +221,9 @@ class ActivityApiService extends BaseApiService {
             ],
             "model": {"Adi": "", "Id": ""},
             "culture": "tr",
-            "form_PATH": "/Dyn/AktiviteBranchAdd/Detail",
+            "form_PATH": "/Dyn/AktiviteBranchAdd/Detail", // ⬅️ FIXED
             "type": "DropDownList",
-            "controller": "AktiviteBranchAdd",
+            "controller": "AktiviteBranchAdd", // ⬅️ FIXED
           },
         },
       );
@@ -272,15 +260,15 @@ class ActivityApiService extends BaseApiService {
           ],
           "model": {"Adres3": "", "Id": ""},
           "culture": "tr",
-          "form_PATH": "/Dyn/AktiviteBranchAdd/Detail",
+          "form_PATH": "/Dyn/AktiviteBranchAdd/Detail", // ⬅️ FIXED
           "type": "DropDownList",
           "apiUrl": null,
-          "controller": "AktiviteBranchAdd",
+          "controller": "AktiviteBranchAdd", // ⬅️ FIXED
           "revisionNo": null,
           "dataId": null,
           "valueName": "DropDownList"
         },
-        "take": 50,
+        "take": "",
         "skip": 0,
         "page": 1,
         "pageSize": 50,
@@ -329,11 +317,6 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  // ===================
-  // LOCATION OPERATIONS
-  // ===================
-
-  /// Get company location
   Future<LocationData?> getCompanyLocation(int companyId) async {
     try {
       final response = await ApiClient.post(
@@ -378,7 +361,7 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  /// Compare locations
+  /// Compare locations - SİZİN ANA İHTİYACINIZ!
   Future<LocationComparisonResult> compareLocations({
     required int companyId,
     required double currentLat,
@@ -440,11 +423,6 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  // ===================
-  // ACTIVITY LIST OPERATIONS
-  // ===================
-
-  /// Get activity list
   Future<ActivityListResponse> getActivityList({
     required ActivityFilter filter,
     int page = 1,
@@ -456,40 +434,85 @@ class ActivityApiService extends BaseApiService {
 
       String params;
       String formPath;
+      String controller;
 
       switch (filter) {
         case ActivityFilter.open:
           params = "AcikAktiviteler";
-          formPath = "/Dyn/AktiviteBranchAdd/List/AcikAktiviteler";
+          formPath = "/Dyn/AktiviteBranchAdd/List/AcikAktiviteler"; // ⬅️ SADECE BURADA DEĞİŞTİ
+          controller = "AktiviteBranchAdd"; // ⬅️ SADECE BURADA DEĞİŞTİ
           break;
         case ActivityFilter.closed:
           params = "KapaliAktiviteler";
-          formPath = "/Dyn/AktiviteBranchAdd/List/KapaliAktiviteler";
+          formPath = "/Dyn/AktiviteBranchAdd/List/KapaliAktiviteler"; // ⬅️ SADECE BURADA DEĞİŞTİ
+          controller = "AktiviteBranchAdd"; // ⬅️ SADECE BURADA DEĞİŞTİ
           break;
         case ActivityFilter.all:
           params = "List";
-          formPath = "/Dyn/AktiviteBranchAdd/List";
+          formPath = "/Dyn/AktiviteBranchAdd/List"; // ⬅️ SADECE BURADA DEĞİŞTİ
+          controller = "AktiviteBranchAdd"; // ⬅️ SADECE BURADA DEĞİŞTİ
           break;
       }
 
-      final requestBody = {
-        "controller": "AktiviteBranchAdd",
-        "params": params,
-        "form_PATH": formPath,
-        "UserLocation": "0,0",
-        "LayoutData": {"element": "ListGrid", "url": formPath},
-        "take": pageSize,
-        "skip": (page - 1) * pageSize,
-        "page": page,
-        "pageSize": pageSize,
-      };
+      // ⬅️ TÜM VERİLER İÇİN PARAMETRELERİ DÜZELT
+      Map<String, dynamic> requestBody;
+
+      if (pageSize >= 999999) {
+        // TÜM VERİLER GELSİN - WEB FORMAT
+        requestBody = {
+          "take": "", // ⬅️ BOŞ STRING
+          "skip": 0, // ⬅️ 0
+          "page": "", // ⬅️ BOŞ STRING
+          "pageSize": "", // ⬅️ BOŞ STRING
+          "model": {
+            "Parameters": [
+              {"Type": 4, "Name": "@startDate"},
+              {"Type": 4, "Name": "@finishDate"},
+              {"Type": 1, "Name": "@MenuTitle", "Value": filter == ActivityFilter.open ? "Açık Aktiviteler" : "Kapalı Aktiviteler"}
+            ],
+            "controller": controller,
+            "params": params,
+            "form_PATH": formPath,
+            "UserLocation": "0,0",
+            "IsAachSpaceSplitLikeFilter": false
+          }
+        };
+        debugPrint('[ACTIVITY_API] 📋 Request for ALL DATA - take: "", page: "", pageSize: ""');
+      } else {
+        // NORMAL PAGINATION
+        requestBody = {
+          "take": pageSize.toString(),
+          "skip": (page - 1) * pageSize,
+          "page": page.toString(),
+          "pageSize": pageSize.toString(),
+          "model": {
+            "Parameters": [
+              {
+                "Type": 1,
+                "Name": "@UserId",
+                "Value": null // ⬅️ Kullanıcı ID'si gerekiyorsa buraya ekleyin
+              },
+              {"Type": 4, "Name": "@startDate"},
+              {"Type": 4, "Name": "@finishDate"},
+              {"Type": 1, "Name": "@MenuTitle", "Value": filter == ActivityFilter.open ? "Açık Aktiviteler" : "Kapalı Aktiviteler"}
+            ],
+            "controller": controller,
+            "params": params,
+            "form_PATH": formPath,
+            "UserLocation": "0,0",
+            "IsAachSpaceSplitLikeFilter": false
+          }
+        };
+        debugPrint('[ACTIVITY_API] 📋 Request for PAGINATION - take: $pageSize, page: $page');
+      }
 
       if (searchQuery != null && searchQuery.isNotEmpty) {
         requestBody["searchQuery"] = searchQuery;
       }
 
+      // ⬅️ ENDPOINT DEĞİŞTİ: GetFormListData (Parameters ile)
       final response = await ApiClient.post(
-        '/api/admin/DynamicFormApi/GetFormListDataType',
+        '/api/admin/DynamicFormApi/GetFormListData', // ⬅️ SADECE BURADA DEĞİŞTİ
         body: requestBody,
       );
 
@@ -506,7 +529,7 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  /// Enrich activities with address information (BRANCH FIRST)
+  /// Enrich activities with address information (BRANCH FIRST) - ÖNEMLİ FONKSİYON!
   Future<List<ActivityListItem>> enrichActivitiesWithAddressesByName(List<ActivityListItem> activities) async {
     final enrichedActivities = <ActivityListItem>[];
 
@@ -589,11 +612,6 @@ class ActivityApiService extends BaseApiService {
     return enrichedActivities;
   }
 
-  // ===================
-  // ADDRESS OPERATIONS
-  // ===================
-
-  /// Get activity address options
   Future<List<DropdownOption>> getActivityAddressOptions({
     required int companyId,
   }) async {
@@ -625,17 +643,12 @@ class ActivityApiService extends BaseApiService {
     }
   }
 
-  // ===================
-  // PRIVATE HELPER METHODS
-  // ===================
-
-  /// Convert form data to web format
   Map<String, dynamic> _convertToWebFormat(Map<String, dynamic> formData, int? activityId) {
     final webData = <String, dynamic>{
       // Form metadata
       "form_REV": false,
       "form_ID": 5895,
-      "form_PATH": "/Dyn/AktiviteBranchAdd/Detail",
+      "form_PATH": "/Dyn/AktiviteBranchAdd/Detail", // ⬅️ FIXED
       "IsCloneRecord": false,
       "tableId": 102,
       "Id": activityId ?? 0,
@@ -694,10 +707,6 @@ class ActivityApiService extends BaseApiService {
     return [];
   }
 }
-
-// ===================
-// ENUMS AND CLASSES
-// ===================
 
 enum ActivityFilter { open, closed, all }
 

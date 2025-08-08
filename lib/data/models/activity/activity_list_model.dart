@@ -1,4 +1,4 @@
-// activity_list_model.dart - GÜNCELLENMIŞ VERSİYON
+// activity_list_model.dart - FIXED VERSION FOR DIRECT RESPONSE
 import 'package:flutter/material.dart';
 
 class ActivityListResponse {
@@ -12,17 +12,52 @@ class ActivityListResponse {
 
   factory ActivityListResponse.fromJson(Map<String, dynamic> json) {
     try {
-      final dataSourceResult = json['DataSourceResult'] as Map<String, dynamic>? ?? {};
-      final dataList = dataSourceResult['Data'] as List<dynamic>? ?? [];
-      final total = dataSourceResult['Total'] as int? ?? 0;
+      debugPrint('[ACTIVITY_RESPONSE] 🔍 Parsing response...');
+      debugPrint('[ACTIVITY_RESPONSE] 🔍 JSON keys: ${json.keys.toList()}');
 
-      final activities = dataList.map((item) => ActivityListItem.fromJson(item as Map<String, dynamic>)).toList();
+      // 🎯 RESPONSE FORMAT DETECTION
+      List<dynamic> dataList;
+      int total;
+
+      if (json.containsKey('DataSourceResult')) {
+        // Company format: {"DataSourceResult": {"Data": [...], "Total": 123}}
+        debugPrint('[ACTIVITY_RESPONSE] 📋 Using DataSourceResult format');
+        final dataSourceResult = json['DataSourceResult'] as Map<String, dynamic>? ?? {};
+        dataList = dataSourceResult['Data'] as List<dynamic>? ?? [];
+        total = dataSourceResult['Total'] as int? ?? 0;
+      } else if (json.containsKey('Data')) {
+        // Activity format: {"Data": [...], "Total": 123, "Aggregates": {}}
+        debugPrint('[ACTIVITY_RESPONSE] 📋 Using direct Data format');
+        dataList = json['Data'] as List<dynamic>? ?? [];
+        total = json['Total'] as int? ?? 0;
+
+        // If Total is null, try counting from Data
+        if (total == 0 && dataList.isNotEmpty) {
+          total = dataList.length;
+          debugPrint('[ACTIVITY_RESPONSE] 📊 Total calculated from data length: $total');
+        }
+      } else {
+        debugPrint('[ACTIVITY_RESPONSE] ❌ Unknown response format');
+        dataList = [];
+        total = 0;
+      }
+
+      debugPrint('[ACTIVITY_RESPONSE] 📊 Found ${dataList.length} items, total: $total');
+
+      final activities = dataList.map((item) {
+        debugPrint('[ACTIVITY_RESPONSE] 🔍 Processing item: ${item['Id']} - ${item['Firma']}');
+        return ActivityListItem.fromJson(item as Map<String, dynamic>);
+      }).toList();
+
+      debugPrint('[ACTIVITY_RESPONSE] ✅ Successfully parsed ${activities.length} activities');
 
       return ActivityListResponse(
         data: activities,
         total: total,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('[ACTIVITY_RESPONSE] ❌ Parse error: $e');
+      debugPrint('[ACTIVITY_RESPONSE] ❌ Stack trace: $stackTrace');
       throw Exception('Activity list parse error: $e');
     }
   }
@@ -31,7 +66,7 @@ class ActivityListResponse {
 class ActivityListItem {
   final int id;
   final String? tipi;
-  final String? konu; // Konu alanı - JSON'da yok ama model için saklayalım
+  final String? konu;
   final String? firma;
   final String? kisi;
   final String? sube; // 🆕 YENİ ALAN - Çok önemli!
@@ -41,10 +76,10 @@ class ActivityListItem {
   final String? temsilci;
   final String? detay;
 
-  // 🆕 YENİ EKLENEN ALANLAR (önceki koddan):
-  final String? tarih; // Kayıt tarihi (opsiyonel)
-  final String? olusturan; // Oluşturan kişi (opsiyonel)
-  final String? aktiviteTipi; // Aktivite tipi metni (opsiyonel)
+  // 🆕 YENİ EKLENEN ALANLAR:
+  final String? tarih;
+  final String? olusturan;
+  final String? aktiviteTipi;
 
   // 🆕 ADRES BİLGİLERİ (enrichment için):
   final String? kisaAdres;
@@ -60,10 +95,10 @@ class ActivityListItem {
     this.konu,
     this.firma,
     this.kisi,
-    this.sube, // 🆕 YENİ
-    this.konum, // 🆕 YENİ - Koordinat
+    this.sube,
+    this.konum,
     this.baslangic,
-    this.bitis, // 🆕 YENİ
+    this.bitis,
     this.temsilci,
     this.detay,
     // Opsiyonel alanlar:
@@ -83,23 +118,23 @@ class ActivityListItem {
     // 🔍 DEBUG: JSON yapısını logla
     debugPrint('[ACTIVITY_ITEM] 🔍 Processing activity: ${json['Id']}');
     debugPrint('[ACTIVITY_ITEM] 🔍 Firma: ${json['Firma']}');
-    debugPrint('[ACTIVITY_ITEM] 🔍 Sube: ${json['Sube']}'); // 🆕 YENİ ALAN
+    debugPrint('[ACTIVITY_ITEM] 🔍 Sube: ${json['Sube']}');
 
     return ActivityListItem(
-      // ✅ TEMEL ALANLAR (JSON'dan direkt gelir):
+      // ✅ TEMEL ALANLAR:
       id: json['Id'] ?? 0,
       tipi: json['Tipi']?.toString(),
-      konu: json['Konu']?.toString(), // JSON'da yok ama model için
+      konu: json['Konu']?.toString(),
       firma: json['Firma']?.toString(),
       kisi: json['Kisi']?.toString(),
-      sube: json['Sube']?.toString(), // 🆕 YENİ ALAN!
-      konum: json['Konum']?.toString(), // 🆕 YENİ ALAN - Koordinat!
+      sube: json['Sube']?.toString(), // 🆕 ÖNEMLİ!
+      konum: json['Konum']?.toString(), // 🆕 Koordinat!
       baslangic: json['Baslangic']?.toString(),
-      bitis: json['Bitis']?.toString(), // 🆕 YENİ ALAN!
+      bitis: json['Bitis']?.toString(),
       temsilci: json['Temsilci']?.toString(),
       detay: json['Detay']?.toString(),
 
-      // ✅ OPSİYONEL ALANLAR (enrichment için):
+      // ✅ OPSİYONEL ALANLAR:
       tarih: json['Tarih']?.toString(),
       olusturan: json['Olusturan']?.toString(),
       aktiviteTipi: json['AktiviteTipi']?.toString(),
@@ -121,10 +156,10 @@ class ActivityListItem {
       'Konu': konu,
       'Firma': firma,
       'Kisi': kisi,
-      'Sube': sube, // 🆕 YENİ
-      'Konum': konum, // 🆕 YENİ - Koordinat
+      'Sube': sube,
+      'Konum': konum,
       'Baslangic': baslangic,
-      'Bitis': bitis, // 🆕 YENİ
+      'Bitis': bitis,
       'Temsilci': temsilci,
       'Detay': detay,
       // Adres bilgileri:
@@ -233,10 +268,7 @@ class ActivityListItem {
   }
 }
 
-// 🔄 DİĞER MODELLER AYNI KALACAK (CompanyAddress, CompanyAddressResponse vs.)
-// Bu modelleri değiştirmiyoruz, sadece ActivityListItem'ı güncelledik.
-
-/// Company Address Model (Adresler sekmesi için) - DEĞİŞMEDİ
+/// Company Address Model (önceden var olan) - DEĞİŞMEDİ
 class CompanyAddress {
   final int id;
   final String? tipi;

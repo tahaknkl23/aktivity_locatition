@@ -1,4 +1,5 @@
 // lib/presentation/widgets/menu/menu_drawer.dart
+import 'package:aktivity_location_app/presentation/screens/report/report_list_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -295,46 +296,301 @@ class _MenuDrawerState extends State<MenuDrawer> {
   }
 
   void _handleMenuTap(MenuItem menuItem, [bool isHome = false]) {
+    // 🔍 ENHANCED DEBUG LOGS
+    debugPrint('[MENU_DRAWER] =====================================');
+    debugPrint('[MENU_DRAWER] 🎯 Menu tapped: ${menuItem.cleanTitle}');
+    debugPrint('[MENU_DRAWER] 🎯 Menu URL: ${menuItem.url}');
+    debugPrint('[MENU_DRAWER] 🎯 Is navigable: ${menuItem.isNavigable}');
+    debugPrint('[MENU_DRAWER] 🎯 Has children: ${menuItem.hasChildren}');
+    debugPrint('[MENU_DRAWER] 🎯 Dashboard: ${menuItem.dashboard}');
+    debugPrint('[MENU_DRAWER] 🎯 ID: ${menuItem.id}');
+    debugPrint('[MENU_DRAWER] =====================================');
+
     Navigator.pop(context); // Drawer'ı kapat
 
     if (isHome) {
-      // Ana sayfaya git
+      return;
+    }
+
+    // 🔍 URL kontrolü
+    if (menuItem.url == null || menuItem.url!.isEmpty) {
+      debugPrint('[MENU_DRAWER] ❌ URL is null or empty!');
+      context.showInfoSnackBar('Bu menü öğesinin URL\'si yok');
       return;
     }
 
     if (!menuItem.isNavigable) {
+      debugPrint('[MENU_DRAWER] ❌ Menu item is not navigable!');
       context.showInfoSnackBar('Bu menü öğesi henüz aktif değil');
       return;
     }
 
-    // URL'e göre navigasyon yap
-    _navigateByUrl(menuItem.url!);
+    // 🔍 URL ANALYSIS
+    final url = menuItem.url!;
+    final urlParts = url.split('/').where((part) => part.isNotEmpty).toList();
+
+    debugPrint('[MENU_DRAWER] 🔍 URL Parts: $urlParts');
+    debugPrint('[MENU_DRAWER] 🔍 URL Length: ${urlParts.length}');
+
+    // URL formatını analiz et
+    if (urlParts.isEmpty) {
+      debugPrint('[MENU_DRAWER] ❌ Empty URL parts!');
+      _showUrlError(url, 'URL parçaları boş');
+      return;
+    }
+
+    // 🆕 REPORT URL HANDLING - Report/Detail/ID formatı
+    if (urlParts[0].toLowerCase() == 'report') {
+      debugPrint('[MENU_DRAWER] 📊 REPORT URL detected!');
+      _handleReportUrl(urlParts, url, menuItem.cleanTitle);
+      return;
+    }
+
+    // Dyn kontrolü (eski format)
+    if (urlParts[0].toLowerCase() != 'dyn') {
+      debugPrint('[MENU_DRAWER] ❌ URL does not start with Dyn or Report!');
+      _showUrlError(url, 'URL formatı tanınmıyor (Dyn veya Report ile başlamalı)');
+      return;
+    }
+
+    if (urlParts.length < 3) {
+      debugPrint('[MENU_DRAWER] ❌ URL too short (need at least /Dyn/Controller/Action)');
+      _showUrlError(url, 'URL çok kısa - en az /Dyn/Controller/Action gerekli');
+      return;
+    }
+
+    final controller = urlParts[1];
+    final action = urlParts[2];
+    final params = urlParts.length > 3 ? urlParts.sublist(3) : <String>[];
+
+    debugPrint('[MENU_DRAWER] 🔍 Controller: $controller');
+    debugPrint('[MENU_DRAWER] 🔍 Action: $action');
+    debugPrint('[MENU_DRAWER] 🔍 Params: $params');
+
+    // Navigation stratejisini belirle
+    try {
+      _navigateByAnalysis(controller, action, params, url, menuItem.cleanTitle);
+    } catch (e) {
+      debugPrint('[MENU_DRAWER] ❌ Navigation error: $e');
+      _showUrlError(url, 'Navigation hatası: $e');
+    }
   }
 
-  void _navigateByUrl(String url) {
-    debugPrint('[MENU_DRAWER] Navigating to: $url');
+  /// 🆕 REPORT URL HANDLER
+  void _handleReportUrl(List<String> urlParts, String fullUrl, String title) {
+    debugPrint('[MENU_DRAWER] 📊 Handling report URL...');
+    debugPrint('[MENU_DRAWER] 📊 URL Parts: $urlParts');
+    debugPrint('[MENU_DRAWER] 📊 Full URL: $fullUrl');
+    debugPrint('[MENU_DRAWER] 📊 Title: $title');
 
-    // ✅ Taha kullanıcısının menü URL'lerine göre düzeltilmiş navigasyon
-    if (url.contains('CompanyAdd/Detail')) {
-      Navigator.pushNamed(context, AppRoutes.addCompany);
-    } else if (url.contains('CompanyAdd/List')) {
-      Navigator.pushNamed(context, AppRoutes.companyList);
-    } else if (url.contains('AktiviteAdd/Detail')) {
-      // ✅ Taha'da farklı URL
-      Navigator.pushNamed(context, AppRoutes.addActivity);
-    } else if (url.contains('AktiviteAdd/List')) {
-      // ✅ Taha'da farklı URL
-      Navigator.pushNamed(context, AppRoutes.activityList);
-    } else if (url.contains('ContactAdd/Detail')) {
-      // Kişi ekleme sayfası - henüz yok
-      context.showInfoSnackBar('Kişi ekleme sayfası hazırlanıyor');
-    } else if (url.contains('ContactAdd/List')) {
-      // Kişi listesi sayfası - henüz yok
-      context.showInfoSnackBar('Kişi listesi sayfası hazırlanıyor');
-    } else {
-      // Genel web view veya başka bir navigasyon
-      context.showInfoSnackBar('Bu sayfa henüz hazırlanıyor: ${url.split('/').last}');
+    if (urlParts.length < 3) {
+      debugPrint('[MENU_DRAWER] ❌ Report URL too short (need Report/Detail/ID)');
+      _showUrlError(fullUrl, 'Report URL çok kısa - Report/Detail/ID formatı gerekli');
+      return;
     }
+
+    final reportAction = urlParts[1]; // Detail
+    final reportId = urlParts[2]; // 12, 2, vs.
+
+    debugPrint('[MENU_DRAWER] 📊 Report Action: $reportAction');
+    debugPrint('[MENU_DRAWER] 📊 Report ID: $reportId');
+
+    // Report için özel navigation
+    try {
+      _navigateToReport(reportId, title, fullUrl);
+    } catch (e) {
+      debugPrint('[MENU_DRAWER] ❌ Report navigation error: $e');
+      _showUrlError(fullUrl, 'Rapor açılamadı: $e');
+    }
+  }
+
+  /// 🆕 REPORT NAVIGATION
+  void _navigateToReport(String reportId, String title, String fullUrl) {
+    debugPrint('[MENU_DRAWER] 📊 Navigating to report...');
+    debugPrint('[MENU_DRAWER] 📊 Report ID: $reportId');
+    debugPrint('[MENU_DRAWER] 📊 Title: $title');
+
+    try {
+      // Report Screen'e git
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => DynamicReportScreen(
+            reportId: reportId,
+            title: title,
+            url: fullUrl,
+          ),
+        ),
+      );
+      debugPrint('[MENU_DRAWER] ✅ Report navigation successful');
+    } catch (e) {
+      debugPrint('[MENU_DRAWER] ❌ Report navigation failed: $e');
+      _showUrlError(fullUrl, 'Rapor açılamadı: $e');
+    }
+  }
+
+  /// URL analizi ile navigation yap
+  void _navigateByAnalysis(String controller, String action, List<String> params, String fullUrl, String title) {
+    debugPrint('[MENU_DRAWER] 🚀 Starting navigation analysis...');
+
+    // Action'a göre strateji belirle
+    final actionLower = action.toLowerCase();
+    final hasParams = params.isNotEmpty;
+    final paramString = hasParams ? params.join('/') : '';
+
+    debugPrint('[MENU_DRAWER] 🔍 Action (lower): $actionLower');
+    debugPrint('[MENU_DRAWER] 🔍 Has params: $hasParams');
+    debugPrint('[MENU_DRAWER] 🔍 Param string: $paramString');
+
+    // 1. BILINEN CONTROLLER'LAR IÇIN DIRECT ROUTING
+    if (_tryDirectRouting(controller, action, params)) {
+      debugPrint('[MENU_DRAWER] ✅ Direct routing successful');
+      return;
+    }
+
+    // 2. ACTION BAZLI ROUTING
+    if (actionLower == 'detail') {
+      debugPrint('[MENU_DRAWER] 📝 Detected FORM action');
+      _navigateToGenericForm(controller, fullUrl, title);
+    } else if (actionLower == 'list') {
+      debugPrint('[MENU_DRAWER] 📋 Detected LIST action');
+      _navigateToGenericList(controller, fullUrl, title);
+    } else if (hasParams) {
+      // Parametreli durumlar için analiz
+      final paramLower = paramString.toLowerCase();
+      debugPrint('[MENU_DRAWER] 🔍 Analyzing params: $paramLower');
+
+      if (paramLower.contains('list') || paramLower.contains('rapor') || paramLower.contains('report')) {
+        debugPrint('[MENU_DRAWER] 📋 Detected LIST in params');
+        _navigateToGenericList(controller, fullUrl, title);
+      } else {
+        debugPrint('[MENU_DRAWER] 📝 Defaulting to FORM for params');
+        _navigateToGenericForm(controller, fullUrl, title);
+      }
+    } else {
+      debugPrint('[MENU_DRAWER] ❓ Unknown action, showing info');
+      _showUrlError(fullUrl, 'Bilinmeyen action: $action');
+    }
+  }
+
+  /// Bilinen controller'lar için direct routing dene
+  bool _tryDirectRouting(String controller, String action, List<String> params) {
+    final controllerLower = controller.toLowerCase();
+    final actionLower = action.toLowerCase();
+
+    debugPrint('[MENU_DRAWER] 🔍 Trying direct routing for: $controllerLower/$actionLower');
+
+    // Company routes
+    if (controllerLower == 'companyadd') {
+      if (actionLower == 'detail') {
+        debugPrint('[MENU_DRAWER] ➡️ Direct route: Company Add');
+        Navigator.pushNamed(context, AppRoutes.addCompany);
+        return true;
+      } else if (actionLower == 'list') {
+        debugPrint('[MENU_DRAWER] ➡️ Direct route: Company List');
+        Navigator.pushNamed(context, AppRoutes.companyList);
+        return true;
+      }
+    }
+
+    // Activity routes
+    if (controllerLower == 'aktiviteadd' || controllerLower == 'aktivitebranchadd') {
+      if (actionLower == 'detail') {
+        debugPrint('[MENU_DRAWER] ➡️ Direct route: Activity Add');
+        Navigator.pushNamed(context, AppRoutes.addActivity);
+        return true;
+      } else if (actionLower == 'list') {
+        debugPrint('[MENU_DRAWER] ➡️ Direct route: Activity List');
+        Navigator.pushNamed(context, AppRoutes.activityList);
+        return true;
+      }
+    }
+
+    debugPrint('[MENU_DRAWER] ❌ No direct route found');
+    return false;
+  }
+
+  /// Generic form sayfasına git - ENHANCED
+  void _navigateToGenericForm(String controller, String url, String title) {
+    debugPrint('[MENU_DRAWER] 📝 Navigating to generic form...');
+    debugPrint('[MENU_DRAWER] 📝 Controller: $controller');
+    debugPrint('[MENU_DRAWER] 📝 URL: $url');
+    debugPrint('[MENU_DRAWER] 📝 Title: $title');
+
+    try {
+      Navigator.pushNamed(
+        context,
+        AppRoutes.dynamicForm,
+        arguments: {
+          'controller': controller,
+          'url': url,
+          'title': title,
+          'isAdd': true,
+        },
+      );
+      debugPrint('[MENU_DRAWER] ✅ Generic form navigation successful');
+    } catch (e) {
+      debugPrint('[MENU_DRAWER] ❌ Generic form navigation failed: $e');
+      _showUrlError(url, 'Form sayfası açılamadı: $e');
+    }
+  }
+
+  /// Generic liste sayfasına git - ENHANCED
+  void _navigateToGenericList(String controller, String url, String title) {
+    debugPrint('[MENU_DRAWER] 📋 Navigating to generic list...');
+    debugPrint('[MENU_DRAWER] 📋 Controller: $controller');
+    debugPrint('[MENU_DRAWER] 📋 URL: $url');
+    debugPrint('[MENU_DRAWER] 📋 Title: $title');
+
+    try {
+      Navigator.pushNamed(
+        context,
+        AppRoutes.dynamicList,
+        arguments: {
+          'controller': controller,
+          'url': url,
+          'title': title,
+          'listType': 'generic',
+        },
+      );
+      debugPrint('[MENU_DRAWER] ✅ Generic list navigation successful');
+    } catch (e) {
+      debugPrint('[MENU_DRAWER] ❌ Generic list navigation failed: $e');
+      _showUrlError(url, 'Liste sayfası açılamadı: $e');
+    }
+  }
+
+  /// URL hata mesajı göster - ENHANCED
+  void _showUrlError(String url, String reason) {
+    debugPrint('[MENU_DRAWER] ❌ URL Error: $reason');
+    debugPrint('[MENU_DRAWER] ❌ Failed URL: $url');
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Sayfa açılamadı',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text('Sebep: $reason'),
+            Text('URL: $url', style: TextStyle(fontSize: 12)),
+          ],
+        ),
+        backgroundColor: Colors.red,
+        duration: Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'Kopyala',
+          textColor: Colors.white,
+          onPressed: () {
+            // URL'yi kopyalama işlemi buraya eklenebilir
+            debugPrint('[MENU_DRAWER] 📋 URL copied to debug: $url');
+          },
+        ),
+      ),
+    );
   }
 
   Widget _buildDrawerFooter(AppSizes size) {

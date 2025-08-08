@@ -1,4 +1,4 @@
-// lib/presentation/screens/activity/activity_list_screen_refactored.dart
+// lib/presentation/screens/activity/activity_list_screen_refactored.dart - DEBUG VERSİON
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -27,7 +27,9 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
   late TabController _tabController;
 
   List<ActivityListItem> _activities = [];
+  List<ActivityListItem> _allActivities = [];
   ActivityFilter _currentFilter = ActivityFilter.open;
+  int _apiTotalCount = 0;
 
   @override
   void initState() {
@@ -56,6 +58,7 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
     setState(() {
       isLoading = true;
       _activities.clear();
+      _allActivities.clear();
       errorMessage = null;
     });
 
@@ -73,108 +76,196 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
     });
   }
 
+  void _applySearch() {
+    List<ActivityListItem> filteredActivities = _allActivities;
+
+    if (searchQuery.isNotEmpty) {
+      filteredActivities = _allActivities.where((activity) {
+        final firmaName = activity.firma?.toLowerCase() ?? '';
+        final searchLower = searchQuery.toLowerCase();
+        return firmaName.contains(searchLower);
+      }).toList();
+
+      debugPrint('[ACTIVITY_LIST] 🔍 Firma filter: "$searchQuery"');
+      debugPrint('[ACTIVITY_LIST] 📊 Results: ${filteredActivities.length}/${_allActivities.length}');
+      debugPrint('[ACTIVITY_LIST] 📊 Cache: ${_allActivities.length} / API Total: $_apiTotalCount');
+    }
+
+    setState(() {
+      _activities = filteredActivities;
+
+      if (searchQuery.isNotEmpty) {
+        totalCount = filteredActivities.length;
+        hasMoreData = _allActivities.length < _apiTotalCount;
+      } else {
+        totalCount = _apiTotalCount;
+        hasMoreData = _allActivities.length < _apiTotalCount;
+      }
+    });
+  }
+
+  @override
+  void onSearchChanged(String query) {
+    setState(() {
+      searchQuery = query;
+    });
+    _applySearch();
+  }
+
+  @override
+  void onClearSearch() {
+    searchController.clear();
+    setState(() {
+      searchQuery = '';
+    });
+    _applySearch();
+  }
+
   @override
   Future<void> loadItems({bool isRefresh = false}) async {
-    if (isRefresh) resetPagination();
+    // 🔍 DEBUG 1: Fonksiyon başlangıcı
+    debugPrint('🟡 [DEBUG] ===== LOAD ITEMS STARTED =====');
+    debugPrint('🟡 [DEBUG] Filter: $_currentFilter');
+    debugPrint('🟡 [DEBUG] isRefresh: $isRefresh');
+    debugPrint('🟡 [DEBUG] Current activities count: ${_activities.length}');
+
+    if (isRefresh) {
+      resetPagination();
+      _allActivities.clear();
+      debugPrint('🟡 [DEBUG] Cleared all activities for refresh');
+    }
+
     showLoadingState(isRefresh: isRefresh);
 
     try {
+      // 🔍 DEBUG 2: API çağrısı öncesi
+      debugPrint('🟡 [DEBUG] ===== CALLING API =====');
+      debugPrint('🟡 [DEBUG] API Endpoint: getActivityList');
+      debugPrint('🟡 [DEBUG] Parameters: filter=$_currentFilter, page=1, pageSize=999999');
+
       final result = await _activityApiService.getActivityList(
         filter: _currentFilter,
-        page: currentPage,
-        pageSize: pageSize,
-        searchQuery: searchQuery.isNotEmpty ? searchQuery : null,
+        page: 1,
+        pageSize: 999999,
+        searchQuery: null,
       );
 
-      if (!mounted) return;
+      // 🔍 DEBUG 3: API yanıtı
+      debugPrint('🟢 [DEBUG] ===== API SUCCESS =====');
+      debugPrint('🟢 [DEBUG] Response data length: ${result.data.length}');
+      debugPrint('🟢 [DEBUG] Response total: ${result.total}');
 
+      if (result.data.isNotEmpty) {
+        debugPrint('🟢 [DEBUG] First activity: ${result.data.first.firma} - ${result.data.first.konu}');
+        debugPrint('🟢 [DEBUG] Last activity: ${result.data.last.firma} - ${result.data.last.konu}');
+
+        // Firma çeşitliliği
+        final firmaNames = result.data.map((a) => a.firma).where((f) => f != null).toSet();
+        debugPrint('🟢 [DEBUG] Unique company count: ${firmaNames.length}');
+        debugPrint('🟢 [DEBUG] Sample companies: ${firmaNames.take(5).toList()}');
+      }
+
+      if (!mounted) {
+        debugPrint('🔴 [DEBUG] Widget not mounted, returning');
+        return;
+      }
+
+      // 🔍 DEBUG 4: Enrichment işlemi
+      debugPrint('🟡 [DEBUG] ===== STARTING ENRICHMENT =====');
       final finalActivities = await _enrichActivitiesIfNeeded(result.data);
+      debugPrint('🟢 [DEBUG] Enrichment completed: ${finalActivities.length} activities');
 
       setState(() {
-        if (isRefresh || currentPage == 1) {
-          _activities = finalActivities;
-        } else {
-          _activities.addAll(result.data);
-        }
-
-        totalCount = result.total;
-        hasMoreData = _activities.length < totalCount;
+        _allActivities = finalActivities;
+        _apiTotalCount = result.total;
+        hasMoreData = false;
         isLoading = false;
         errorMessage = null;
+        currentPage = 1;
       });
-    } catch (e) {
+
+      // 🔍 DEBUG 5: State güncellendikten sonra
+      debugPrint('🟢 [DEBUG] ===== STATE UPDATED =====');
+      debugPrint('🟢 [DEBUG] _allActivities: ${_allActivities.length}');
+      debugPrint('🟢 [DEBUG] _apiTotalCount: $_apiTotalCount');
+      debugPrint('🟢 [DEBUG] hasMoreData: $hasMoreData');
+      debugPrint('🟢 [DEBUG] isLoading: $isLoading');
+
+      _applySearch();
+
+      // 🔍 DEBUG 6: Search uygulandıktan sonra
+      debugPrint('🟢 [DEBUG] ===== AFTER SEARCH APPLIED =====');
+      debugPrint('🟢 [DEBUG] _activities (displayed): ${_activities.length}');
+      debugPrint('🟢 [DEBUG] totalCount: $totalCount');
+    } catch (e, stackTrace) {
+      // 🔍 DEBUG 7: Hata durumu
+      debugPrint('🔴 [DEBUG] ===== API ERROR =====');
+      debugPrint('🔴 [DEBUG] Error type: ${e.runtimeType}');
+      debugPrint('🔴 [DEBUG] Error message: $e');
+      debugPrint('🔴 [DEBUG] Stack trace: $stackTrace');
+
       if (mounted) {
         setError(e.toString());
-        if (isRefresh || currentPage == 1) {
-          SnackbarHelper.showError(
-            context: context,
-            message: 'Aktiviteler yüklenirken hata oluştu: ${e.toString()}',
-          );
-        }
+        SnackbarHelper.showError(
+          context: context,
+          message: 'Aktiviteler yüklenirken hata oluştu: ${e.toString()}',
+        );
       }
     }
+
+    debugPrint('🟡 [DEBUG] ===== LOAD ITEMS COMPLETED =====');
   }
 
   @override
   Future<void> loadMoreItems() async {
-    if (isLoadingMore || !hasMoreData) return;
-
-    showLoadingMoreState();
-
-    try {
-      final result = await _activityApiService.getActivityList(
-        filter: _currentFilter,
-        page: currentPage,
-        pageSize: pageSize,
-        searchQuery: searchQuery.isNotEmpty ? searchQuery : null,
-      );
-
-      if (mounted) {
-        setState(() {
-          _activities.addAll(result.data);
-          hasMoreData = _activities.length < result.total;
-          isLoadingMore = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          currentPage--; // Revert page increment
-          isLoadingMore = false;
-        });
-      }
-    }
+    debugPrint('🟡 [DEBUG] loadMoreItems called - but disabled for bulk loading');
+    return;
   }
 
   Future<List<ActivityListItem>> _enrichActivitiesIfNeeded(List<ActivityListItem> activities) async {
-    // Only enrich first page open activities
-    if (currentPage == 1 && _currentFilter == ActivityFilter.open && activities.isNotEmpty) {
-      final activitiesToEnrich = activities.take(2).toList();
-      final enrichedActivities = await _activityApiService.enrichActivitiesWithAddressesByName(activitiesToEnrich);
+    debugPrint('🟡 [DEBUG] _enrichActivitiesIfNeeded called with ${activities.length} activities');
 
-      return [
-        ...enrichedActivities,
-        ...activities.skip(2),
-      ];
+    if (currentPage == 1 && _currentFilter == ActivityFilter.open && activities.isNotEmpty) {
+      debugPrint('🟡 [DEBUG] Starting enrichment for first 2 activities');
+      final activitiesToEnrich = activities.take(2).toList();
+
+      try {
+        final enrichedActivities = await _activityApiService.enrichActivitiesWithAddressesByName(activitiesToEnrich);
+        debugPrint('🟢 [DEBUG] Enrichment successful');
+
+        return [
+          ...enrichedActivities,
+          ...activities.skip(2),
+        ];
+      } catch (e) {
+        debugPrint('🔴 [DEBUG] Enrichment failed: $e');
+        return activities;
+      }
     }
+
+    debugPrint('🟡 [DEBUG] No enrichment needed');
     return activities;
   }
 
   void _onActivityTap(ActivityListItem activity) {
+    debugPrint('🟡 [DEBUG] Activity tapped: ${activity.id} - ${activity.firma}');
     Navigator.pushNamed(
       context,
       AppRoutes.addActivity,
       arguments: {'activityId': activity.id},
     ).then((result) {
       if (result == true) {
+        debugPrint('🟡 [DEBUG] Activity updated, refreshing list');
         loadItems(isRefresh: true);
       }
     });
   }
 
   void _onAddActivity() {
+    debugPrint('🟡 [DEBUG] Add activity button pressed');
     Navigator.pushNamed(context, AppRoutes.addActivity).then((result) {
       if (result == true) {
+        debugPrint('🟡 [DEBUG] New activity added, refreshing list');
         loadItems(isRefresh: true);
       }
     });
@@ -182,7 +273,12 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
 
   @override
   Widget build(BuildContext context) {
-    //final size = AppSizes.of(context);
+    // 🔍 DEBUG 8: UI Render
+    debugPrint('🟡 [DEBUG] ===== BUILDING UI =====');
+    debugPrint('🟡 [DEBUG] isLoading: $isLoading');
+    debugPrint('🟡 [DEBUG] errorMessage: $errorMessage');
+    debugPrint('🟡 [DEBUG] _activities.length: ${_activities.length}');
+    debugPrint('🟡 [DEBUG] searchQuery: "$searchQuery"');
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -216,15 +312,16 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
         children: [
           SearchBarWidget(
             controller: searchController,
-            hintText: 'Aktivite ara...',
+            hintText: 'Firma adına göre ara...',
             onChanged: onSearchChanged,
             onClear: onClearSearch,
             hasValue: searchQuery.isNotEmpty,
           ),
           StatsBarWidget(
             icon: Icons.assignment,
-            text:
-                '${_activities.length}${totalCount > _activities.length ? '+' : ''} / $totalCount ${_currentFilter == ActivityFilter.open ? 'Açık' : 'Kapalı'} Aktivite',
+            text: searchQuery.isNotEmpty
+                ? '${_activities.length} sonuç (${_allActivities.length}/$_apiTotalCount yüklendi)'
+                : '${_activities.length}${totalCount > _activities.length ? '+' : ''} / $totalCount ${_currentFilter == ActivityFilter.open ? 'Açık' : 'Kapalı'} Aktivite',
             iconColor: _currentFilter == ActivityFilter.open ? AppColors.success : AppColors.error,
             isLoading: isLoading || isLoadingMore,
           ),
@@ -243,7 +340,10 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
   }
 
   Widget _buildBody() {
+    debugPrint('🟡 [DEBUG] _buildBody called - isLoading: $isLoading, activities: ${_activities.length}, error: $errorMessage');
+
     if (isLoading && _activities.isEmpty) {
+      debugPrint('🟡 [DEBUG] Showing loading state');
       return const LoadingStateWidget(
         title: 'Aktiviteler yükleniyor...',
         subtitle: 'Lütfen bekleyin',
@@ -251,6 +351,7 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
     }
 
     if (errorMessage != null && _activities.isEmpty) {
+      debugPrint('🔴 [DEBUG] Showing error state: $errorMessage');
       return ErrorStateWidget(
         title: 'Bir hata oluştu',
         message: errorMessage!,
@@ -259,6 +360,7 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
     }
 
     if (_activities.isEmpty) {
+      debugPrint('🟡 [DEBUG] Showing empty state');
       return EmptyStateWidget(
         icon: searchQuery.isNotEmpty
             ? Icons.search_off
@@ -272,6 +374,7 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
       );
     }
 
+    debugPrint('🟢 [DEBUG] Showing activities list with ${_activities.length} items');
     return RefreshIndicator(
       onRefresh: () => loadItems(isRefresh: true),
       child: ListView.builder(

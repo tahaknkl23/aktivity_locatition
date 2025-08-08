@@ -713,59 +713,64 @@ class CompanyApiService extends BaseApiService {
     );
   }
 
-  /// Firma listesini getirir (YENİ METHOD)
   Future<CompanyListResponse> getCompanyList({
     int page = 1,
     int pageSize = 20,
     String? searchQuery,
   }) async {
     try {
-      debugPrint('[COMPANY_API] Getting company list - Page: $page, Size: $pageSize, Search: $searchQuery');
+      debugPrint('[COMPANY_API] 🎯 Getting company list - Page: $page, Size: $pageSize, Search: $searchQuery');
 
-      final requestBody = {
-        "controller": "CompanyAdd",
-        "form_PATH": "/Dyn/CompanyAdd/List",
-        "UserLocation": "0,0",
-        "LayoutData": {"element": "ListGrid", "url": "/Dyn/CompanyAdd/List"},
-        "take": pageSize,
-        "skip": (page - 1) * pageSize,
-        "page": page,
-        "pageSize": pageSize,
-      };
+      // ⬅️ TÜM VERİLER İÇİN PARAMETRELERİ DÜZELT
+      Map<String, dynamic> requestBody;
+
+      if (pageSize >= 999999) {
+        // TÜM VERİLER GELSİN
+        requestBody = {
+          "controller": "CompanyAdd",
+          "form_PATH": "/Dyn/CompanyAdd/List",
+          "UserLocation": "0,0",
+          "LayoutData": {"element": "ListGrid", "url": "/Dyn/CompanyAdd/List"},
+          "take": "", // ⬅️ BOŞ STRING
+          "skip": 0, // ⬅️ 0
+          "page": "", // ⬅️ BOŞ STRING
+          "pageSize": "", // ⬅️ BOŞ STRING
+        };
+        debugPrint('[COMPANY_API] 📋 Request for ALL DATA - take: "", page: "", pageSize: ""');
+      } else {
+        // NORMAL PAGINATION
+        requestBody = {
+          "controller": "CompanyAdd",
+          "form_PATH": "/Dyn/CompanyAdd/List",
+          "UserLocation": "0,0",
+          "LayoutData": {"element": "ListGrid", "url": "/Dyn/CompanyAdd/List"},
+          "take": pageSize.toString(),
+          "skip": (page - 1) * pageSize,
+          "page": page.toString(),
+          "pageSize": pageSize.toString(),
+        };
+        debugPrint('[COMPANY_API] 📋 Request for PAGINATION - take: $pageSize, page: $page');
+      }
 
       // Add search filter if provided
       if (searchQuery != null && searchQuery.isNotEmpty) {
         requestBody["searchQuery"] = searchQuery;
       }
 
-      // 🔍 DEBUG: Request body'yi logla
-      debugPrint('[COMPANY_API] 🔍 Request body: $requestBody');
-
       final response = await ApiClient.post(
         '/api/admin/DynamicFormApi/GetFormListDataType',
         body: requestBody,
       );
 
-      // 🔍 DEBUG: Response'u logla
-      debugPrint('[COMPANY_API] 🔍 Response status: ${response.statusCode}');
-      debugPrint(
-          '[COMPANY_API] 🔍 Response body (first 1000 chars): ${response.body.length > 1000 ? response.body.substring(0, 1000) : response.body}');
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-
-        // 🔍 DEBUG: Response structure'ını logla
-        debugPrint('[COMPANY_API] 🔍 Response keys: ${data.keys.toList()}');
-        debugPrint('[COMPANY_API] 🔍 Data.Data length: ${data['Data']?.length ?? 0}');
-        debugPrint('[COMPANY_API] 🔍 Total count in response: ${data['Total'] ?? 'N/A'}');
-
-        debugPrint('[COMPANY_API] Company list response received');
+        debugPrint('[COMPANY_API] ✅ Response received');
         return CompanyListResponse.fromJson(data);
       } else {
         throw Exception('Failed to load company list: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('[COMPANY_API] Get company list error: $e');
+      debugPrint('[COMPANY_API] ❌ Get company list error: $e');
       throw Exception('Firma listesi yüklenemedi: ${e.toString()}');
     }
   }

@@ -1,7 +1,9 @@
+// lib/main.dart - UPDATED VERSION
 import 'dart:async';
+import 'package:aktivity_location_app/presentation/providers/dashboard_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart'; // ✅ Provider import eklendi
+import 'package:provider/provider.dart';
 
 // Enhanced session timeout imports
 import 'core/services/hybrid_session_timeout_service.dart';
@@ -9,8 +11,8 @@ import 'presentation/widgets/common/session_aware_widget.dart';
 import 'data/services/api/auth_service.dart';
 import 'core/routes/app_routes.dart';
 import 'core/utils/photo_url_helper.dart';
-import 'core/constants/app_colors.dart'; // ✅ App colors import
-import 'presentation/providers/menu_provider.dart'; // ✅ Menu provider import
+import 'core/constants/app_colors.dart';
+import 'presentation/providers/menu_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -113,9 +115,12 @@ class _MyAppState extends State<MyApp> {
     try {
       await _authService.logout();
 
-      // Menu provider'ı temizle
-      final menuProvider = _navigatorKey.currentContext?.read<MenuProvider>();
-      menuProvider?.clearMenu();
+      // Provider'ları temizle
+      final context = _navigatorKey.currentContext;
+      if (context != null) {
+        context.read<MenuProvider>().clearMenu();
+        context.read<DashboardProvider>().clearCache(); // ✅ YENİ EKLENEN
+      }
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final context = _navigatorKey.currentContext;
@@ -179,6 +184,7 @@ class _MyAppState extends State<MyApp> {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => MenuProvider()),
+        ChangeNotifierProvider(create: (_) => DashboardProvider()), // ✅ YENİ EKLENEN
         // Diğer provider'lar buraya eklenebilir
       ],
       child: MaterialApp(

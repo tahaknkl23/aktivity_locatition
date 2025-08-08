@@ -57,7 +57,7 @@ class BaseApiService {
     }
   }
 
-  // Standard paginated list data loading
+// BaseApiService.dart - Geçici debug version
   Future<Map<String, dynamic>> getFormListData({
     required String controller,
     required String params,
@@ -67,6 +67,7 @@ class BaseApiService {
   }) async {
     final skip = (page - 1) * pageSize;
 
+    // ⚠️ GEÇİCİ: ESKİ PAYLOAD formatını kullan ama debug logları ekle
     final requestBody = {
       "controller": controller,
       "params": params,
@@ -80,19 +81,60 @@ class BaseApiService {
       "take": pageSize,
     };
 
-    debugPrint('[API] GetFormListData - Controller: $controller, Params: $params, Page: $page, PageSize: $pageSize');
+    debugPrint('[API] 🔍 DEBUG REQUEST:');
+    debugPrint('[API] 📋 Controller: $controller');
+    debugPrint('[API] 📄 Page: $page, PageSize: $pageSize');
+    debugPrint('[API] 🎯 Skip: $skip, Take: $pageSize');
+    debugPrint('[API] 🔗 FormPath: $formPath');
+    debugPrint('[API] 📋 Params: $params');
+    debugPrint('[API] 📦 Full payload: ${jsonEncode(requestBody)}');
 
-    final response = await ApiClient.post(
-      _getFormListDataType,
-      body: requestBody,
-    );
+    try {
+      debugPrint('[API] 🌐 Making request to: $_getFormListDataType');
 
-    if (response.statusCode == 200) {
-      final result = jsonDecode(response.body);
-      debugPrint('[API] Response received - Data count: ${_extractDataCount(result)}');
-      return result;
-    } else {
-      throw Exception('Failed to load list data: ${response.statusCode}');
+      final response = await ApiClient.post(
+        _getFormListDataType,
+        body: requestBody,
+      );
+
+      debugPrint('[API] 📡 Response status: ${response.statusCode}');
+      debugPrint('[API] 📡 Response headers: ${response.headers}');
+
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        debugPrint('[API] ✅ Response keys: ${result.keys.toList()}');
+        debugPrint('[API] 📊 Data count: ${_extractDataCount(result)}');
+
+        // Response yapısını detaylarıyla logla
+        if (result['DataSourceResult'] != null) {
+          final dsResult = result['DataSourceResult'];
+          debugPrint('[API] 📦 DataSourceResult keys: ${dsResult.keys.toList()}');
+          if (dsResult['Total'] != null) {
+            debugPrint('[API] 📊 Server Total: ${dsResult['Total']}');
+          }
+          if (dsResult['Data'] != null && dsResult['Data'] is List) {
+            final dataList = dsResult['Data'] as List;
+            debugPrint('[API] 📊 Data length: ${dataList.length}');
+            if (dataList.isNotEmpty) {
+              final firstItem = dataList[0];
+              if (firstItem is Map<String, dynamic>) {
+                final itemId = firstItem['Id'] ?? firstItem['id'] ?? firstItem['ID'];
+                debugPrint('[API] 🔍 First item ID: $itemId');
+              }
+            }
+          }
+        }
+
+        return result;
+      } else {
+        debugPrint('[API] ❌ Error response body: ${response.body}');
+        throw Exception('Server error: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('[API] 💥 Exception details:');
+      debugPrint('[API] ❌ Error: $e');
+      debugPrint('[API] 📍 StackTrace: $stackTrace');
+      rethrow;
     }
   }
 
