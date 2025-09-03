@@ -208,7 +208,7 @@ class WidgetDisplayProperties {
   });
 }
 
-/// Widget veri response'u
+/// Widget veri response'u - UPDATED VERSION
 class WidgetDataResponse {
   final List<WidgetDataItem> data;
   final WidgetReportInfo reportInfo;
@@ -225,13 +225,16 @@ class WidgetDataResponse {
       final dataSourceResult = json['DataSourceResult'] as Map<String, dynamic>? ?? {};
       final dataList = dataSourceResult['Data'] as List<dynamic>? ?? [];
 
+      debugPrint('[WIDGET_DATA_RESPONSE] 📊 Parsing response for: ${json['reportInf']?['Name'] ?? 'Unknown'}');
+      debugPrint('[WIDGET_DATA_RESPONSE] 📋 Data items: ${dataList.length}');
+
       return WidgetDataResponse(
         data: dataList.map((item) => WidgetDataItem.fromJson(item as Map<String, dynamic>)).toList(),
         reportInfo: WidgetReportInfo.fromJson(json['reportInf'] ?? {}),
         index: json['Index'] as int? ?? 0,
       );
     } catch (e) {
-      debugPrint('[WIDGET_DATA_RESPONSE] Parse error: $e');
+      debugPrint('[WIDGET_DATA_RESPONSE] ❌ Parse error: $e');
       return WidgetDataResponse.empty();
     }
   }
@@ -257,9 +260,13 @@ class WidgetDataResponse {
 
   /// Widget'ın hata durumunu kontrol et
   bool get hasError => reportInfo.errors?.isNotEmpty == true;
+
+  /// Chart için özel getter'lar
+  bool get isChart => reportInfo.chartType != 'Info';
+  bool get isInfo => reportInfo.chartType == 'Info';
 }
 
-/// Widget veri öğesi
+/// Widget veri öğesi - UPDATED VERSION
 class WidgetDataItem {
   final dynamic value;
   final String? name;
@@ -337,9 +344,17 @@ class WidgetDataItem {
     }
     return null;
   }
+
+  /// Chart için flex değer alma
+  dynamic get chartValue {
+    if (gerceklesen != null) return gerceklesen;
+    if (hedef != null) return hedef;
+    if (value != null) return value;
+    return 0;
+  }
 }
 
-/// Chart veri çifti
+/// Chart veri çifti - UPDATED VERSION
 class ChartDataPair {
   final String category;
   final dynamic target;
@@ -387,7 +402,7 @@ class WidgetReportInfo {
   }
 }
 
-/// Dashboard istatistikleri için helper model
+/// Dashboard istatistikleri için helper model - UPDATED VERSION
 class DashboardStatistics {
   final List<StatisticCard> cards;
   final List<ChartWidget> charts;
@@ -403,13 +418,34 @@ class DashboardStatistics {
     final cards = <StatisticCard>[];
     final charts = <ChartWidget>[];
 
-    for (final response in responses) {
-      if (response.reportInfo.chartType == 'Info' && response.singleValue != null) {
-        cards.add(StatisticCard.fromWidgetData(response));
-      } else if (response.reportInfo.chartType != 'Info') {
-        charts.add(ChartWidget.fromWidgetData(response));
+    debugPrint('[DASHBOARD_STATISTICS] 🔄 Processing ${responses.length} widget responses...');
+
+    for (int i = 0; i < responses.length; i++) {
+      final response = responses[i];
+      final chartType = response.reportInfo.chartType;
+
+      debugPrint('[DASHBOARD_STATISTICS] 📊 Widget $i: ${response.reportInfo.name} ($chartType)');
+
+      try {
+        if (chartType == 'Info' && response.singleValue != null) {
+          // Info widget - Statistic Card olarak işle
+          final card = StatisticCard.fromWidgetData(response);
+          cards.add(card);
+          debugPrint('[DASHBOARD_STATISTICS] ✅ Added Info card: ${card.title}');
+        } else if (chartType != 'Info' && response.chartData.isNotEmpty) {
+          // Chart widget - Chart Widget olarak işle
+          final chart = ChartWidget.fromWidgetData(response);
+          charts.add(chart);
+          debugPrint('[DASHBOARD_STATISTICS] ✅ Added Chart: ${chart.title} (${chart.chartType}) - ${chart.data.length} data points');
+        } else {
+          debugPrint('[DASHBOARD_STATISTICS] ⚠️ Skipped widget $i: No valid data');
+        }
+      } catch (e) {
+        debugPrint('[DASHBOARD_STATISTICS] ❌ Error processing widget $i: $e');
       }
     }
+
+    debugPrint('[DASHBOARD_STATISTICS] 🎯 Final result: ${cards.length} cards, ${charts.length} charts');
 
     return DashboardStatistics(
       cards: cards,
@@ -484,7 +520,7 @@ class StatisticCard {
   }
 }
 
-/// Chart widget
+/// Chart widget - COMPLETELY UPDATED VERSION
 class ChartWidget {
   final String title;
   final String chartType;
@@ -497,7 +533,37 @@ class ChartWidget {
   });
 
   factory ChartWidget.fromWidgetData(WidgetDataResponse response) {
-    final chartData = response.chartData.map((item) => item.chartPair).where((pair) => pair != null).cast<ChartDataPair>().toList();
+    debugPrint('[CHART_WIDGET] 🔄 Processing chart: ${response.reportInfo.name}');
+    debugPrint('[CHART_WIDGET] 📊 Chart type: ${response.reportInfo.chartType}');
+    debugPrint('[CHART_WIDGET] 📋 Data count: ${response.chartData.length}');
+
+    final chartData = <ChartDataPair>[];
+
+    for (int i = 0; i < response.chartData.length; i++) {
+      final item = response.chartData[i];
+      debugPrint('[CHART_WIDGET] 🔍 Item $i: ${item.name} / ${item.category}');
+
+      // MultiBar için Hedef-Gerçekleşen data pair'i
+      if (item.hedef != null && item.gerceklesen != null) {
+        final pair = ChartDataPair(
+          category: item.category ?? item.name ?? 'Kategori ${i + 1}',
+          target: item.hedef,
+          actual: item.gerceklesen,
+        );
+        chartData.add(pair);
+        debugPrint('[CHART_WIDGET] ✅ Added pair: ${pair.category} - Target: ${pair.target}, Actual: ${pair.actual}');
+      }
+      // Single value chart için
+      else if (item.value != null) {
+        final pair = ChartDataPair(
+          category: item.category ?? item.name ?? 'Kategori ${i + 1}',
+          target: 0,
+          actual: item.value,
+        );
+        chartData.add(pair);
+        debugPrint('[CHART_WIDGET] ✅ Added single value: ${pair.category} = ${pair.actual}');
+      }
+    }
 
     return ChartWidget(
       title: response.reportInfo.name,
@@ -505,4 +571,41 @@ class ChartWidget {
       data: chartData,
     );
   }
+
+  /// Chart widget için özel methodlar
+  bool get hasData => data.isNotEmpty;
+  bool get isMultiBar => chartType == 'MultiBar';
+  bool get isLine => chartType == 'Line';
+  bool get isPie => chartType == 'Pie';
+
+  /// Maximum değerleri al
+  double get maxTarget => data.isEmpty ? 0 : data.map((d) => d.targetValue).reduce((a, b) => a > b ? a : b);
+  double get maxActual => data.isEmpty ? 0 : data.map((d) => d.actualValue).reduce((a, b) => a > b ? a : b);
+  double get maxValue => [maxTarget, maxActual].reduce((a, b) => a > b ? a : b);
+
+  /// Chart için formatted title
+  String get formattedTitle {
+    if (title.length > 25) {
+      return '${title.substring(0, 25)}...';
+    }
+    return title;
+  }
+
+  /// Chart'da kullanılacak renkler
+  List<Color> get chartColors {
+    return [
+      const Color(0xFF667eea), // Blue
+      const Color(0xFF5cb85c), // Green
+      const Color(0xFFf0ad4e), // Orange
+      const Color(0xFFd9534f), // Red
+      const Color(0xFF5bc0de), // Light blue
+      const Color(0xFF9b59b6), // Purple
+      const Color(0xFF1abc9c), // Teal
+      const Color(0xFFe67e22), // Dark orange
+    ];
+  }
+
+  /// Hedef ve gerçekleşen için farklı renkler
+  Color get targetColor => const Color(0xFFf07b69);
+  Color get actualColor => const Color(0xFF6fc7ef);
 }

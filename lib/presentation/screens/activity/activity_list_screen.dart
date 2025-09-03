@@ -1,8 +1,10 @@
-// lib/presentation/screens/activity/activity_list_screen_refactored.dart - DEBUG VERSİON
+// lib/presentation/screens/activity/activity_list_screen_refactored.dart - ENRICHMENT CONTROL ADDED
+
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/helpers/snackbar_helper.dart';
+import '../../../core/helpers/location_config_helper.dart'; // ✅ YENİ IMPORT
 import '../../../core/routes/app_routes.dart';
 import '../../../core/mixins/list_state_mixin.dart';
 import '../../../core/widgets/common/loading_state_widget.dart';
@@ -31,11 +33,23 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
   ActivityFilter _currentFilter = ActivityFilter.open;
   int _apiTotalCount = 0;
 
+  // ✅ YENİ: Address enrichment kontrolü
+  bool get _shouldEnrichAddresses {
+    return LocationConfigHelper.shouldEnrichWithAddress('AktiviteBranchAdd');
+  }
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(_onTabChanged);
+
+    // ✅ YENİ: Address enrichment settings debug
+    debugPrint('[ACTIVITY_LIST] ===== ENRICHMENT SETTINGS =====');
+    debugPrint('[ACTIVITY_LIST] Address enrichment enabled: $_shouldEnrichAddresses');
+    LocationConfigHelper.debugLocationSettings('/Dyn/AktiviteBranchAdd/List', 'AktiviteBranchAdd', 'List');
+    debugPrint('[ACTIVITY_LIST] =====================================');
+
     loadItems();
   }
 
@@ -128,6 +142,7 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
     debugPrint('🟡 [DEBUG] Filter: $_currentFilter');
     debugPrint('🟡 [DEBUG] isRefresh: $isRefresh');
     debugPrint('🟡 [DEBUG] Current activities count: ${_activities.length}');
+    debugPrint('🟡 [DEBUG] Address enrichment enabled: $_shouldEnrichAddresses'); // ✅ YENİ DEBUG
 
     if (isRefresh) {
       resetPagination();
@@ -170,8 +185,9 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
         return;
       }
 
-      // 🔍 DEBUG 4: Enrichment işlemi
+      // 🔍 DEBUG 4: Enrichment işlemi - ✅ GÜNCELLENECEK
       debugPrint('🟡 [DEBUG] ===== STARTING ENRICHMENT =====');
+      debugPrint('🟡 [DEBUG] Should enrich addresses: $_shouldEnrichAddresses');
       final finalActivities = await _enrichActivitiesIfNeeded(result.data);
       debugPrint('🟢 [DEBUG] Enrichment completed: ${finalActivities.length} activities');
 
@@ -222,11 +238,19 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
     return;
   }
 
+  // ✅ GÜNCELLENECEK: Enrichment metodu
   Future<List<ActivityListItem>> _enrichActivitiesIfNeeded(List<ActivityListItem> activities) async {
     debugPrint('🟡 [DEBUG] _enrichActivitiesIfNeeded called with ${activities.length} activities');
 
+    // ✅ YENİ: Enrichment kontrolü
+    if (!_shouldEnrichAddresses) {
+      debugPrint('🟡 [DEBUG] ⚠️ Address enrichment DISABLED - returning original data');
+      debugPrint('🟡 [DEBUG] ⚠️ LocationConfigHelper.shouldEnrichWithAddress returned false');
+      return activities;
+    }
+
     if (currentPage == 1 && _currentFilter == ActivityFilter.open && activities.isNotEmpty) {
-      debugPrint('🟡 [DEBUG] Starting enrichment for first 2 activities');
+      debugPrint('🟡 [DEBUG] ✅ Address enrichment ENABLED - starting enrichment for first 2 activities');
       final activitiesToEnrich = activities.take(2).toList();
 
       try {
@@ -243,7 +267,7 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
       }
     }
 
-    debugPrint('🟡 [DEBUG] No enrichment needed');
+    debugPrint('🟡 [DEBUG] No enrichment needed (not first page or not open activities)');
     return activities;
   }
 
@@ -325,6 +349,60 @@ class _ActivityListScreenState extends State<ActivityListScreen> with TickerProv
             iconColor: _currentFilter == ActivityFilter.open ? AppColors.success : AppColors.error,
             isLoading: isLoading || isLoadingMore,
           ),
+          // ✅ YENİ: Address enrichment status bar
+          if (_shouldEnrichAddresses && _currentFilter == ActivityFilter.open) ...[
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha:0.1),
+                border: Border(
+                  bottom: BorderSide(color: Colors.green.withValues(alpha:0.2)),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.location_on, color: Colors.green, size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Adres zenginleştirme aktif - İlk ${_activities.isNotEmpty ? "aktiviteler" : "aktivite"} için adres bilgileri gösteriliyor',
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // ✅ YENİ: Address enrichment disabled bar
+          if (!_shouldEnrichAddresses) ...[
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha:0.1),
+                border: Border(
+                  bottom: BorderSide(color: Colors.orange.withValues(alpha:0.2)),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.location_off, color: Colors.orange, size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Adres zenginleştirme kapalı - Sadece temel aktivite bilgileri gösteriliyor',
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           Expanded(
             child: TabBarView(
               controller: _tabController,

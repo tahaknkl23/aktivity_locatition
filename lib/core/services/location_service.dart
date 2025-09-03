@@ -1,3 +1,4 @@
+// lib/core/services/location_service.dart - TIMEOUT FIX
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -16,16 +17,13 @@ class LocationService {
   /// Konum izni kontrolü ve alma
   Future<bool> requestLocationPermission() async {
     try {
-      // İzin durumunu kontrol et
       PermissionStatus permission = await Permission.location.status;
 
       if (permission.isDenied) {
-        // İzin iste
         permission = await Permission.location.request();
       }
 
       if (permission.isPermanentlyDenied) {
-        // Ayarlara yönlendir
         await openAppSettings();
         return false;
       }
@@ -37,7 +35,7 @@ class LocationService {
     }
   }
 
-  /// Mevcut konumu al
+  /// Mevcut konumu al - IMPROVED VERSION
   Future<LocationData?> getCurrentLocation() async {
     try {
       // İzin kontrolü
@@ -54,28 +52,71 @@ class LocationService {
 
       debugPrint('[LOCATION] Getting current position...');
 
-      // Mevcut konumu al
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
-      );
+      // 🚀 IMPROVED: Progressive location getting
+      Position? position;
 
-      debugPrint('[LOCATION] Position: ${position.latitude}, ${position.longitude}');
+      try {
+        // 1. Önce son bilinen konumu dene (hızlı)
+        debugPrint('[LOCATION] Trying last known position...');
+        position = await Geolocator.getLastKnownPosition(
+          forceAndroidLocationManager: false,
+        );
+
+        if (position != null) {
+          // Son konum 5 dakikadan yeniyse kullan
+          final age = DateTime.now().difference(position.timestamp);
+          if (age.inMinutes <= 5) {
+            debugPrint('[LOCATION] Using last known position (${age.inMinutes}min old)');
+          } else {
+            debugPrint('[LOCATION] Last position too old (${age.inMinutes}min), getting fresh');
+            position = null; // Fresh position al
+          }
+        }
+      } catch (e) {
+        debugPrint('[LOCATION] Last known position failed: $e');
+        position = null;
+      }
+
+      // 2. Fresh position al (eğer last known yoksa/eskiyse)
+      if (position == null) {
+        try {
+          debugPrint('[LOCATION] Getting fresh position with medium accuracy...');
+          // Önce medium accuracy ile dene (daha hızlı)
+          position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.medium,
+            timeLimit: const Duration(seconds: 15), // 15 saniye
+          );
+          debugPrint('[LOCATION] Fresh medium accuracy position obtained');
+        } catch (e) {
+          debugPrint('[LOCATION] Medium accuracy failed, trying high accuracy: $e');
+          // Medium başarısızsa high accuracy dene (daha yavaş ama kesin)
+          position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: const Duration(seconds: 45), // 45 saniye
+          );
+          debugPrint('[LOCATION] High accuracy position obtained');
+        }
+      }
+
+      debugPrint('[LOCATION] Final position: ${position.latitude}, ${position.longitude}');
 
       // Adres bilgisini al
       String address = 'Konum alındı';
       try {
+        debugPrint('[LOCATION] Getting address from coordinates...');
         List<Placemark> placemarks = await placemarkFromCoordinates(
           position.latitude,
           position.longitude,
-        );
+        ).timeout(Duration(seconds: 10)); // Address için 10sn timeout
 
         if (placemarks.isNotEmpty) {
           Placemark place = placemarks.first;
           address = _formatAddress(place);
+          debugPrint('[LOCATION] Address obtained: $address');
         }
       } catch (e) {
         debugPrint('[LOCATION] Address lookup failed: $e');
+        address = 'Konum: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
       }
 
       return LocationData(
@@ -86,14 +127,28 @@ class LocationService {
       );
     } catch (e) {
       debugPrint('[LOCATION] Get current location error: $e');
-      throw 'Konum alınamadı: ${e.toString()}';
+
+      // User-friendly error messages
+      String userMessage = 'Konum alınamadı';
+
+      if (e.toString().contains('TimeoutException') || e.toString().contains('timeout')) {
+        userMessage = 'Konum alma zaman aşımına uğradı. GPS sinyalini kontrol edin ve tekrar deneyin.';
+      } else if (e.toString().contains('permission') || e.toString().contains('izin')) {
+        userMessage = 'Konum izni gerekli. Lütfen uygulamaya konum iznı verin.';
+      } else if (e.toString().contains('service') || e.toString().contains('GPS')) {
+        userMessage = 'GPS servisi kapalı. Lütfen cihazınızın GPS ayarını açın.';
+      } else if (e.toString().contains('network') || e.toString().contains('internet')) {
+        userMessage = 'Konum servisi için internet bağlantısı gerekli.';
+      }
+
+      throw userMessage;
     }
   }
 
   /// Koordinatlardan adres al
   Future<String> getAddressFromCoordinates(double lat, double lng) async {
     try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng).timeout(Duration(seconds: 10));
 
       if (placemarks.isNotEmpty) {
         return _formatAddress(placemarks.first);
@@ -102,7 +157,7 @@ class LocationService {
       return 'Adres bulunamadı';
     } catch (e) {
       debugPrint('[LOCATION] Address lookup error: $e');
-      return 'Konum: $lat, $lng';
+      return 'Konum: ${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}';
     }
   }
 
@@ -171,7 +226,7 @@ class LocationService {
   }
 }
 
-/// Konum verisi modeli
+/// Konum verisi modeli - UNCHANGED
 class LocationData {
   final double latitude;
   final double longitude;
@@ -186,7 +241,6 @@ class LocationData {
   });
 
   String get coordinates => '$latitude,$longitude';
-
   String get displayText => '$address\n$coordinates';
 
   Map<String, dynamic> toJson() => {

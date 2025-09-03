@@ -8,7 +8,6 @@ import 'dynamic_form_field_widget.dart';
 class DynamicFormWidget extends StatefulWidget {
   final DynamicFormModel formModel;
   final Function(Map<String, dynamic> formData) onFormChanged;
-  final Future<void> Function(String fieldKey, dynamic value)? onFieldDependencyChanged; // 🆕 Bağımlılık callback'i
   final VoidCallback? onSave;
   final VoidCallback? onDelete;
   final bool isLoading;
@@ -20,7 +19,6 @@ class DynamicFormWidget extends StatefulWidget {
     super.key,
     required this.formModel,
     required this.onFormChanged,
-    this.onFieldDependencyChanged, // 🆕 Yeni parameter
     this.onSave,
     this.onDelete,
     this.isLoading = false,
@@ -61,80 +59,18 @@ class _DynamicFormWidgetState extends State<DynamicFormWidget> {
       _formData[key] = value;
     });
 
-    // 🔧 Field dependency kontrolü - Firma değiştiğinde şube temizle
-    _handleFieldDependency(key, value);
-
     widget.onFormChanged(_formData);
     debugPrint('[DynamicForm] Field changed: $key = $value');
   }
 
-  /// 🎯 Field bağımlılık yönetimi
-  void _handleFieldDependency(String changedFieldKey, dynamic newValue) {
-    // 🔧 SADECE FİRMA ALANI DEĞİŞTİĞİNDE ÇALIŞ - Şube, kişi vb alanları ignore et
-    if (changedFieldKey.toLowerCase() == 'companyid' ||
-        (changedFieldKey.toLowerCase().contains('company') &&
-            !changedFieldKey.toLowerCase().contains('branch') &&
-            !changedFieldKey.toLowerCase().contains('sube') &&
-            !changedFieldKey.toLowerCase().contains('şube'))) {
-      debugPrint('[DynamicForm] 🏢 Firma değişti: $changedFieldKey = $newValue');
-
-      // Şube ile ilgili tüm alanları bul ve temizle
-      final branchFields = widget.formModel.sections
-          .expand((section) => section.fields)
-          .where((field) =>
-              field.key.toLowerCase().contains('sube') ||
-              field.key.toLowerCase().contains('şube') ||
-              field.key.toLowerCase().contains('branch') ||
-              field.key.toLowerCase().contains('companybranch'))
-          .toList();
-
-      for (final branchField in branchFields) {
-        if (_formData.containsKey(branchField.key)) {
-          setState(() {
-            _formData[branchField.key] = null;
-          });
-          debugPrint('[DynamicForm] 🏪 Şube alanı temizlendi: ${branchField.key}');
-        }
-      }
-
-      // Parent'a bildir ki yeni şube seçenekleri yüklensin
-      if (widget.onFieldDependencyChanged != null) {
-        widget.onFieldDependencyChanged!(changedFieldKey, newValue);
-      }
-    }
-
-    // 🔧 SADECE ŞEHİR ALANI DEĞİŞTİĞİNDE ÇALIŞ - İlçe için
-    else if (changedFieldKey.toLowerCase() == 'cityid' ||
-        (changedFieldKey.toLowerCase().contains('city') &&
-            !changedFieldKey.toLowerCase().contains('district') &&
-            !changedFieldKey.toLowerCase().contains('ilçe'))) {
-      final districtFields = widget.formModel.sections
-          .expand((section) => section.fields)
-          .where((field) => field.key.toLowerCase().contains('district') || field.key.toLowerCase().contains('ilçe'))
-          .toList();
-
-      for (final districtField in districtFields) {
-        if (_formData.containsKey(districtField.key)) {
-          setState(() {
-            _formData[districtField.key] = null;
-          });
-          debugPrint('[DynamicForm] 🏘️ İlçe alanı temizlendi: ${districtField.key}');
-        }
-      }
-
-      if (widget.onFieldDependencyChanged != null) {
-        widget.onFieldDependencyChanged!(changedFieldKey, newValue);
-      }
-    }
-
-    // 🔧 DİĞER ALANLAR İÇİN HİÇBİR ŞEY YAPMA
-    else {
-      debugPrint('[DynamicForm] ⚪ Field ignored for dependency: $changedFieldKey');
-    }
-  }
-
   bool _validateForm() {
     return _formKey.currentState?.validate() ?? false;
+  }
+  // 🆕 PUBLIC VALIDATION METHOD - GenericDynamicFormScreen için
+
+  bool validateForm() {
+    debugPrint('[DynamicForm] Public validation called');
+    return _validateForm();
   }
 
   /// 💾 SAVE BUTTON İŞLEYİŞİ - GELİŞTİRİLMİŞ VERSİYON

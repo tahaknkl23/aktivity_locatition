@@ -133,7 +133,6 @@ class _FormContentWidgetState extends State<FormContentWidget> {
             child: DynamicFormWidget(
               formModel: widget.formModel,
               onFormChanged: widget.onFormChanged,
-              onFieldDependencyChanged: widget.onFieldDependencyChanged, // 🆕 EKLENDI (nullable callback)
               onSave: null,
               isLoading: widget.isSaving,
               isEditing: widget.isEditing,

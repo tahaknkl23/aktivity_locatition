@@ -1,4 +1,4 @@
-// lib/main.dart - UPDATED VERSION
+// lib/main.dart - NO DIALOG VERSION
 import 'dart:async';
 import 'package:aktivity_location_app/presentation/providers/dashboard_provider.dart';
 import 'package:flutter/material.dart';
@@ -42,86 +42,34 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    _initializeHybridSessionTimeout();
+    _initializeDirectSessionTimeout();
   }
 
-  /// 🚀 HYBRID Session timeout sistemini başlatır
-  void _initializeHybridSessionTimeout() {
+  /// DIRECT Session timeout sistemini başlatır - NO DIALOG
+  void _initializeDirectSessionTimeout() {
     HybridSessionTimeoutService.instance.initialize(
-      timeoutDuration: const Duration(minutes: 30), // 🎯 30 DAKİKA
-      warningDuration: const Duration(minutes: 25), // 🎯 25 DAKİKADA UYARI
-      onTimeout: _handleSessionTimeout,
-      onWarning: _handleSessionWarning,
+      timeoutDuration: const Duration(minutes: 30), // 30 DAKİKA
+      onTimeout: _handleDirectSessionTimeout, // DIRECT LOGOUT
     );
-    debugPrint('[MAIN] Hybrid session timeout initialized (30min timeout, 25min warning)');
+    debugPrint('[MAIN] Direct session timeout initialized (30min - no dialog)');
   }
 
-  /// 🔔 Session warning olduğunda çağrılır
-  void _handleSessionWarning() async {
-    debugPrint('[MAIN] 🔔 Session warning triggered');
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final context = _navigatorKey.currentContext;
-      if (context != null && mounted) {
-        _showSessionWarningDialog(context);
-      }
-    });
-  }
-
-  /// 🔔 Session warning dialog'unu göster
-  void _showSessionWarningDialog(BuildContext context) {
-    final remainingTime = HybridSessionTimeoutService.instance.remainingTime;
-    if (remainingTime == null) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => SessionWarningDialog(
-        remainingTime: remainingTime,
-        onExtendSession: () {
-          Navigator.pop(context);
-          HybridSessionTimeoutService.instance.dismissWarning();
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.white),
-                  SizedBox(width: 12),
-                  Text(
-                    'Oturumunuz uzatıldı',
-                    style: TextStyle(fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        },
-        onLogout: () {
-          Navigator.pop(context);
-          _handleSessionTimeout();
-        },
-      ),
-    );
-  }
-
-  /// ⏰ Session timeout olduğunda çağrılır
-  void _handleSessionTimeout() async {
-    debugPrint('[MAIN] 🔔 Session timeout detected - performing logout');
+  /// DIRECT Session timeout - NO WARNING DIALOG
+  void _handleDirectSessionTimeout() async {
+    debugPrint('[MAIN] Direct session timeout detected - performing immediate logout');
 
     try {
+      // Logout işlemi
       await _authService.logout();
 
       // Provider'ları temizle
       final context = _navigatorKey.currentContext;
-      if (context != null) {
+      if (context != null && mounted) {
         context.read<MenuProvider>().clearMenu();
-        context.read<DashboardProvider>().clearCache(); // ✅ YENİ EKLENEN
+        context.read<DashboardProvider>().clearCache();
       }
 
+      // DIRECT REDIRECT - NO DIALOG
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final context = _navigatorKey.currentContext;
         if (context != null && mounted) {
@@ -130,37 +78,14 @@ class _MyAppState extends State<MyApp> {
             (route) => false,
           );
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Row(
-                children: [
-                  Icon(Icons.timer_off, color: Colors.white),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Güvenlik nedeniyle oturumunuz sonlandırıldı. (30 dakika)',
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                ],
-              ),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 6),
-              behavior: SnackBarBehavior.floating,
-              action: SnackBarAction(
-                label: 'Tamam',
-                textColor: Colors.white,
-                onPressed: () {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                },
-              ),
-            ),
-          );
+          // Simple info snackbar - NOT blocking dialog
+          _showTimeoutNotification(context);
         }
       });
     } catch (e) {
       debugPrint('[MAIN] Session timeout error: $e');
 
+      // Emergency redirect on error
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final context = _navigatorKey.currentContext;
         if (context != null && mounted) {
@@ -171,6 +96,40 @@ class _MyAppState extends State<MyApp> {
         }
       });
     }
+  }
+
+  /// Simple notification - NOT blocking dialog
+  void _showTimeoutNotification(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.timer_off, color: Colors.white, size: 20),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Oturum süresi doldu. Güvenlik için çıkış yapıldı.',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 4),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        action: SnackBarAction(
+          label: 'Tamam',
+          textColor: Colors.white,
+          onPressed: () {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          },
+        ),
+      ),
+    );
   }
 
   @override
@@ -184,7 +143,7 @@ class _MyAppState extends State<MyApp> {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => MenuProvider()),
-        ChangeNotifierProvider(create: (_) => DashboardProvider()), // ✅ YENİ EKLENEN
+        ChangeNotifierProvider(create: (_) => DashboardProvider()),
         // Diğer provider'lar buraya eklenebilir
       ],
       child: MaterialApp(
@@ -263,157 +222,79 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
-/// 🔔 Session Warning Dialog Widget
-class SessionWarningDialog extends StatefulWidget {
-  final Duration remainingTime;
-  final VoidCallback onExtendSession;
-  final VoidCallback onLogout;
+// Session debugging widget - Development only
+class SessionDebugWidget extends StatefulWidget {
+  final Widget child;
 
-  const SessionWarningDialog({
-    super.key,
-    required this.remainingTime,
-    required this.onExtendSession,
-    required this.onLogout,
-  });
+  const SessionDebugWidget({super.key, required this.child});
 
   @override
-  State<SessionWarningDialog> createState() => _SessionWarningDialogState();
+  State<SessionDebugWidget> createState() => _SessionDebugWidgetState();
 }
 
-class _SessionWarningDialogState extends State<SessionWarningDialog> with TickerProviderStateMixin {
-  late Timer _countdownTimer;
-  late Duration _timeLeft;
-  late AnimationController _pulseController;
+class _SessionDebugWidgetState extends State<SessionDebugWidget> {
+  Timer? _debugTimer;
+  String _sessionStatus = 'Unknown';
 
   @override
   void initState() {
     super.initState();
-    _timeLeft = widget.remainingTime;
-
-    _pulseController = AnimationController(
-      duration: const Duration(seconds: 1),
-      vsync: this,
-    )..repeat(reverse: true);
-
-    _startCountdown();
+    _startSessionDebugging();
   }
 
-  void _startCountdown() {
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_timeLeft.inSeconds <= 0) {
-        timer.cancel();
-        widget.onLogout();
-        return;
-      }
+  void _startSessionDebugging() {
+    _debugTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      final healthStatus = await HybridSessionTimeoutService.instance.checkSessionHealth();
+      final sessionInfo = HybridSessionTimeoutService.instance.sessionInfo;
 
       setState(() {
-        _timeLeft = Duration(seconds: _timeLeft.inSeconds - 1);
+        _sessionStatus = '${healthStatus.description} | ${sessionInfo.formattedRemainingTime}';
       });
+
+      debugPrint('[SESSION_DEBUG] $healthStatus - ${sessionInfo.formattedRemainingTime}');
     });
   }
 
   @override
   void dispose() {
-    _countdownTimer.cancel();
-    _pulseController.dispose();
+    _debugTimer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: Colors.white,
-      contentPadding: const EdgeInsets.all(24),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedBuilder(
-            animation: _pulseController,
-            builder: (context, child) {
-              return Transform.scale(
-                scale: 1.0 + (_pulseController.value * 0.1),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.timer_outlined,
-                    size: 48,
-                    color: Colors.orange,
-                  ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Oturum Zaman Aşımı',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Oturumunuz ${_timeLeft.inMinutes} dakika ${_timeLeft.inSeconds % 60} saniye sonra otomatik olarak sonlandırılacak.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Colors.black54,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-            ),
-            child: Text(
-              '${_timeLeft.inMinutes.toString().padLeft(2, '0')}:${(_timeLeft.inSeconds % 60).toString().padLeft(2, '0')}',
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.red,
-                fontFamily: 'monospace',
+    return Stack(
+      children: [
+        widget.child,
+        // Debug overlay - only in debug mode
+        if (kDebugMode)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            right: 10,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(4),
               ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: widget.onLogout,
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.red),
-                    foregroundColor: Colors.red,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  child: const Text('Çıkış Yap'),
+              child: Text(
+                _sessionStatus,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontFamily: 'monospace',
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: widget.onExtendSession,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  child: const Text('Devam Et'),
-                ),
-              ),
-            ],
+            ),
           ),
-        ],
-      ),
+      ],
     );
   }
+}
+
+// Development flag check
+bool get kDebugMode {
+  bool inDebugMode = false;
+  assert(inDebugMode = true);
+  return inDebugMode;
 }

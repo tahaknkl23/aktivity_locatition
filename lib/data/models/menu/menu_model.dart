@@ -6,9 +6,36 @@ class MenuResponse {
   MenuResponse({required this.menuItems});
 
   factory MenuResponse.fromJson(List<dynamic> json) {
-    return MenuResponse(
-      menuItems: json.map((item) => MenuItem.fromJson(item)).toList(),
-    );
+    debugPrint('[MENU_MODEL_DEBUG] ===== PARSING MENU =====');
+    debugPrint('[MENU_MODEL_DEBUG] Input length: ${json.length}');
+
+    final items = <MenuItem>[];
+
+    for (int i = 0; i < json.length; i++) {
+      try {
+        final item = json[i];
+        debugPrint('[MENU_MODEL_DEBUG] Item $i type: ${item.runtimeType}');
+
+        if (item is Map<dynamic, dynamic>) {
+          // 🔧 TYPE CASTING FIX
+          final stringMap = Map<String, dynamic>.from(item);
+          debugPrint('[MENU_MODEL_DEBUG] Item $i keys: ${stringMap.keys.toList()}');
+
+          final menuItem = MenuItem.fromJson(stringMap);
+          items.add(menuItem);
+          debugPrint('[MENU_MODEL_DEBUG] ✅ Item $i parsed: "${menuItem.title}" (${menuItem.items.length} sub-items)');
+        } else {
+          debugPrint('[MENU_MODEL_DEBUG] ❌ Item $i is not a Map: ${item.runtimeType}');
+        }
+      } catch (e) {
+        debugPrint('[MENU_MODEL_DEBUG] ❌ Failed to parse item $i: $e');
+      }
+    }
+
+    debugPrint('[MENU_MODEL_DEBUG] Successfully parsed ${items.length} items');
+    debugPrint('[MENU_MODEL_DEBUG] =========================');
+
+    return MenuResponse(menuItems: items);
   }
 }
 
@@ -28,13 +55,64 @@ class MenuItem {
   });
 
   factory MenuItem.fromJson(Map<String, dynamic> json) {
-    return MenuItem(
-      title: json['title'] as String? ?? '',
-      dashboard: json['dashboard'] as String?,
-      url: json['url'] as String?,
-      id: json['Id'] as int? ?? 0,
-      items: (json['items'] as List<dynamic>? ?? []).map((item) => MenuItem.fromJson(item)).toList(),
+    final title = json['title'] as String? ?? '';
+    final id = json['Id'] as int? ?? 0;
+    final url = json['url'] as String?;
+    final dashboard = json['dashboard'] as String?;
+
+    debugPrint('[MENU_ITEM_DEBUG] 🔍 Parsing MenuItem: "$title" (ID: $id)');
+    debugPrint('[MENU_ITEM_DEBUG] 🔍 URL: $url');
+    debugPrint('[MENU_ITEM_DEBUG] 🔍 Dashboard: $dashboard');
+
+    // Sub items parsing - ROBUST VERSION with type casting
+    final List<MenuItem> subItems = [];
+    if (json.containsKey('items') && json['items'] != null) {
+      final itemsData = json['items'];
+      debugPrint('[MENU_ITEM_DEBUG] 🔍 Items data type: ${itemsData.runtimeType}');
+
+      if (itemsData is List) {
+        debugPrint('[MENU_ITEM_DEBUG] 🔍 Found ${itemsData.length} sub-items');
+
+        for (int i = 0; i < itemsData.length; i++) {
+          try {
+            final subItemData = itemsData[i];
+            debugPrint('[MENU_ITEM_DEBUG] 🔍 Sub-item $i type: ${subItemData.runtimeType}');
+
+            if (subItemData is Map<dynamic, dynamic>) {
+              // 🔧 TYPE CASTING FIX for sub-items
+              final stringMap = Map<String, dynamic>.from(subItemData);
+              final subItem = MenuItem.fromJson(stringMap);
+              subItems.add(subItem);
+              debugPrint('[MENU_ITEM_DEBUG] ✅ Sub-item $i parsed: "${subItem.title}"');
+            } else if (subItemData is Map<String, dynamic>) {
+              // Already correct type
+              final subItem = MenuItem.fromJson(subItemData);
+              subItems.add(subItem);
+              debugPrint('[MENU_ITEM_DEBUG] ✅ Sub-item $i parsed: "${subItem.title}"');
+            } else {
+              debugPrint('[MENU_ITEM_DEBUG] ⚠️ Sub-item $i is not a Map: ${subItemData.runtimeType}');
+            }
+          } catch (e) {
+            debugPrint('[MENU_ITEM_DEBUG] ❌ Failed to parse sub-item $i: $e');
+          }
+        }
+      } else {
+        debugPrint('[MENU_ITEM_DEBUG] ⚠️ Items is not a List: ${itemsData.runtimeType}');
+      }
+    } else {
+      debugPrint('[MENU_ITEM_DEBUG] 🔍 No items key found or items is null');
+    }
+
+    final menuItem = MenuItem(
+      title: title,
+      dashboard: dashboard,
+      url: url,
+      id: id,
+      items: subItems,
     );
+
+    debugPrint('[MENU_ITEM_DEBUG] ✅ MenuItem created: "${menuItem.title}" with ${menuItem.items.length} sub-items');
+    return menuItem;
   }
 
   // Getter'lar

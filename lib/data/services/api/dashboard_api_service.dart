@@ -29,14 +29,14 @@ class DashboardApiService {
     }
   }
 
-  /// 2. WIDGET DATALARINI TOPLU ÇEK
-  Future<List<WidgetDataResponse>> getWidgetDataBulk({
+  /// 2. INFO WIDGET DATALARINI TOPLU ÇEK
+  Future<List<WidgetDataResponse>> getInfoWidgetDataBulk({
     required List<String> sqlIds,
     required List<int> indexes,
     required List<int> widgetIds,
   }) async {
     try {
-      debugPrint('[DASHBOARD_API] 📊 Getting bulk widget data...');
+      debugPrint('[DASHBOARD_API] 📊 Getting bulk INFO widget data...');
       debugPrint('[DASHBOARD_API] SQL IDs: $sqlIds');
       debugPrint('[DASHBOARD_API] Indexes: $indexes');
       debugPrint('[DASHBOARD_API] Widget IDs: $widgetIds');
@@ -54,61 +54,134 @@ class DashboardApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as List<dynamic>;
-        debugPrint('[DASHBOARD_API] ✅ Bulk widget data loaded: ${data.length} items');
+        debugPrint('[DASHBOARD_API] ✅ Bulk INFO widget data loaded: ${data.length} items');
 
         return data.map((item) => WidgetDataResponse.fromJson(item as Map<String, dynamic>)).toList();
       } else {
         throw Exception('Failed to load bulk widget data: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('[DASHBOARD_API] ❌ Bulk widget data error: $e');
+      debugPrint('[DASHBOARD_API] ❌ Bulk INFO widget data error: $e');
       rethrow;
     }
   }
 
-  /// 3. CHART DATA ÇEK (MultiBar vb. için)
-  Future<WidgetDataResponse> getChartData({
-    required String sqlId,
-    required int widgetId,
-    required int index,
-    int pageSize = 0,
-    bool useDefaultFilterDate = true,
+  /// 3. CHART WIDGET DATALARINI TOPLU ÇEK (MULTIBAR, LINE VB.)
+  Future<List<WidgetDataResponse>> getChartWidgetDataBulk({
+    required List<String> sqlIds,
+    required List<int> indexes,
+    required List<int> widgetIds,
   }) async {
     try {
-      debugPrint('[DASHBOARD_API] 📊 Getting chart data for SQL ID: $sqlId');
+      debugPrint('[DASHBOARD_API] 📊 Getting bulk CHART widget data...');
+      debugPrint('[DASHBOARD_API] Chart SQL IDs: $sqlIds');
+      debugPrint('[DASHBOARD_API] Chart Indexes: $indexes');
+      debugPrint('[DASHBOARD_API] Chart Widget IDs: $widgetIds');
 
       final response = await ApiClient.post(
         '/api/DynamicFormApi/GetDataTypeMultipleReport',
         body: {
           "form_PATH": null,
-          "SqlIds": [sqlId],
-          "WidgetIds": [widgetId],
-          "indexs": [index],
+          "SqlIds": sqlIds,
+          "WidgetIds": widgetIds,
+          "indexs": indexes,
           "dashboardFilterItems": [],
-          "pageSize": pageSize,
-          "useDefaultFilterDate": useDefaultFilterDate,
+          "pageSize": 0, // ✅ CHART için pageSize 0
+          "useDefaultFilterDate": true, // ✅ CHART için default filter
         },
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as List<dynamic>;
-        debugPrint('[DASHBOARD_API] ✅ Chart data loaded');
+        debugPrint('[DASHBOARD_API] ✅ Bulk CHART widget data loaded: ${data.length} items');
 
-        if (data.isNotEmpty) {
-          return WidgetDataResponse.fromJson(data.first as Map<String, dynamic>);
-        } else {
-          return WidgetDataResponse.empty();
-        }
+        return data.map((item) => WidgetDataResponse.fromJson(item as Map<String, dynamic>)).toList();
       } else {
-        throw Exception('Failed to load chart data: ${response.statusCode}');
+        throw Exception('Failed to load chart widget data: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('[DASHBOARD_API] ❌ Chart data error: $e');
+      debugPrint('[DASHBOARD_API] ❌ Bulk CHART widget data error: $e');
       rethrow;
     }
   }
 
-  /// 4. DETAIL GRID DATA ÇEK (info box detayları için)
+  /// 4. FULL DASHBOARD DATA - INFO + CHART COMBINED
+  Future<DashboardStatistics> getFullDashboardData() async {
+    try {
+      debugPrint('[DASHBOARD_API] 🚀 Loading full dashboard data...');
+
+      // 1. Dashboard config al
+      final dashboardConfig = await getDashboardConfiguration();
+
+      if (dashboardConfig.dashboards.isEmpty) {
+        debugPrint('[DASHBOARD_API] ⚠️ No dashboard configuration found');
+        return DashboardStatistics.empty();
+      }
+
+      final mainDashboard = dashboardConfig.mainDashboard!;
+      debugPrint('[DASHBOARD_API] 📋 Main dashboard: ${mainDashboard.dashboardName}');
+      debugPrint('[DASHBOARD_API] 📊 Total widgets: ${mainDashboard.widgets.length}');
+
+      // 2. Widget'ları tipine göre ayır
+      final infoWidgets = mainDashboard.widgets.where((w) => w.widgetType == 'Info').toList();
+      final chartWidgets = mainDashboard.widgets.where((w) => w.widgetType != 'Info').toList();
+
+      debugPrint('[DASHBOARD_API] 📊 Info widgets: ${infoWidgets.length}');
+      debugPrint('[DASHBOARD_API] 📈 Chart widgets: ${chartWidgets.length}');
+
+      List<WidgetDataResponse> allWidgetData = [];
+
+      // 3. INFO widget'ları için bulk data çek
+      if (infoWidgets.isNotEmpty) {
+        final infoSqlIds = infoWidgets.map((w) => w.sql).toList();
+        final infoIndexes = infoWidgets.map((w) => w.index).toList();
+        final infoWidgetIds = infoWidgets.map((w) => w.id).toList();
+
+        debugPrint('[DASHBOARD_API] 🔄 Loading INFO widgets...');
+        final infoDataList = await getInfoWidgetDataBulk(
+          sqlIds: infoSqlIds,
+          indexes: infoIndexes,
+          widgetIds: infoWidgetIds,
+        );
+
+        allWidgetData.addAll(infoDataList);
+        debugPrint('[DASHBOARD_API] ✅ INFO widgets loaded: ${infoDataList.length}');
+      }
+
+      // 4. CHART widget'ları için bulk data çek
+      if (chartWidgets.isNotEmpty) {
+        final chartSqlIds = chartWidgets.map((w) => w.sql).toList();
+        final chartIndexes = chartWidgets.map((w) => w.index).toList();
+        final chartWidgetIds = chartWidgets.map((w) => w.id).toList();
+
+        debugPrint('[DASHBOARD_API] 🔄 Loading CHART widgets...');
+        final chartDataList = await getChartWidgetDataBulk(
+          sqlIds: chartSqlIds,
+          indexes: chartIndexes,
+          widgetIds: chartWidgetIds,
+        );
+
+        allWidgetData.addAll(chartDataList);
+        debugPrint('[DASHBOARD_API] ✅ CHART widgets loaded: ${chartDataList.length}');
+      }
+
+      debugPrint('[DASHBOARD_API] 🎯 Total widget data loaded: ${allWidgetData.length}');
+
+      // 5. Widget data'larını istatistiklere çevir
+      final statistics = DashboardStatistics.fromWidgetResponses(allWidgetData);
+
+      debugPrint('[DASHBOARD_API] ✅ Dashboard statistics created:');
+      debugPrint('[DASHBOARD_API] 📊 Cards: ${statistics.cards.length}');
+      debugPrint('[DASHBOARD_API] 📈 Charts: ${statistics.charts.length}');
+
+      return statistics;
+    } catch (e) {
+      debugPrint('[DASHBOARD_API] ❌ Full dashboard data error: $e');
+      rethrow;
+    }
+  }
+
+  /// 5. DETAIL GRID DATA ÇEK (info box detayları için)
   Future<List<Map<String, dynamic>>> getDetailGridData({
     required String sqlId,
     required int widgetId,
@@ -154,67 +227,6 @@ class DashboardApiService {
     }
   }
 
-  /// 5. FULL DASHBOARD DATA - COMPLETE ÇÖZÜM
-  Future<DashboardStatistics> getFullDashboardData() async {
-    try {
-      debugPrint('[DASHBOARD_API] 🚀 Loading full dashboard data...');
-
-      // 1. Dashboard config al
-      final dashboardConfig = await getDashboardConfiguration();
-
-      if (dashboardConfig.dashboards.isEmpty) {
-        debugPrint('[DASHBOARD_API] ⚠️ No dashboard configuration found');
-        return DashboardStatistics.empty();
-      }
-
-      final mainDashboard = dashboardConfig.mainDashboard!;
-      final infoWidgets = mainDashboard.widgets.where((w) => w.widgetType == 'Info').toList();
-
-      if (infoWidgets.isEmpty) {
-        debugPrint('[DASHBOARD_API] ⚠️ No info widgets found');
-        return DashboardStatistics.empty();
-      }
-
-      // 2. Info widget'ları için bulk data çek
-      final sqlIds = infoWidgets.map((w) => w.sql).toList();
-      final indexes = infoWidgets.map((w) => w.index).toList();
-      final widgetIds = infoWidgets.map((w) => w.id).toList();
-
-      final widgetDataList = await getWidgetDataBulk(
-        sqlIds: sqlIds,
-        indexes: indexes,
-        widgetIds: widgetIds,
-      );
-
-      // 3. Chart widget'ları için ayrı çek (varsa)
-      final chartWidgets = mainDashboard.widgets.where((w) => w.widgetType != 'Info').toList();
-      final chartDataList = <WidgetDataResponse>[];
-
-      for (final chartWidget in chartWidgets) {
-        try {
-          final chartData = await getChartData(
-            sqlId: chartWidget.sql,
-            widgetId: chartWidget.id,
-            index: chartWidget.index,
-          );
-          chartDataList.add(chartData);
-        } catch (e) {
-          debugPrint('[DASHBOARD_API] ⚠️ Chart widget ${chartWidget.id} failed: $e');
-        }
-      }
-
-      // 4. Tüm data'yı birleştir
-      final allWidgetData = [...widgetDataList, ...chartDataList];
-
-      debugPrint('[DASHBOARD_API] ✅ Full dashboard data loaded: ${allWidgetData.length} widgets');
-
-      return DashboardStatistics.fromWidgetResponses(allWidgetData);
-    } catch (e) {
-      debugPrint('[DASHBOARD_API] ❌ Full dashboard data error: $e');
-      rethrow;
-    }
-  }
-
   /// 6. REFRESH DASHBOARD DATA (cache'li versiyon)
   Future<DashboardStatistics> refreshDashboardData({
     bool forceRefresh = false,
@@ -237,17 +249,36 @@ class DashboardApiService {
     required int widgetId,
     required String sqlId,
     required int index,
+    bool isChart = false,
   }) async {
     try {
-      debugPrint('[DASHBOARD_API] 📊 Getting specific widget data: $widgetId');
+      debugPrint('[DASHBOARD_API] 📊 Getting specific widget data: $widgetId (isChart: $isChart)');
 
-      final dataList = await getWidgetDataBulk(
-        sqlIds: [sqlId],
-        indexes: [index],
-        widgetIds: [widgetId],
+      Map<String, dynamic> requestBody = {
+        "form_PATH": null,
+        "SqlIds": [sqlId],
+        "indexs": [index],
+        "WidgetIds": [widgetId],
+        "dashboardFilterItems": [],
+      };
+
+      // Chart widget için extra parametreler
+      if (isChart) {
+        requestBody["pageSize"] = 0;
+        requestBody["useDefaultFilterDate"] = true;
+      }
+
+      final response = await ApiClient.post(
+        '/api/DynamicFormApi/GetDataTypeMultipleReport',
+        body: requestBody,
       );
 
-      return dataList.isNotEmpty ? dataList.first : null;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as List<dynamic>;
+        return data.isNotEmpty ? WidgetDataResponse.fromJson(data.first as Map<String, dynamic>) : null;
+      } else {
+        throw Exception('Failed to load specific widget data: ${response.statusCode}');
+      }
     } catch (e) {
       debugPrint('[DASHBOARD_API] ❌ Specific widget data error: $e');
       return null;

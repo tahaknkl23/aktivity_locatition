@@ -50,7 +50,6 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    // Set initial value if provided
     if (widget.selectedDomain != null && widget.selectedDomain!.isNotEmpty) {
       _controller.text = widget.selectedDomain!;
     }
@@ -67,7 +66,6 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
   Future<void> _loadRecentDomains() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // 🎯 Gerçek giriş geçmişinden oku
       final domains = prefs.getStringList('login_history') ?? [];
       debugPrint('[Domain Load] Loaded login history: $domains');
 
@@ -92,11 +90,9 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Remove if exists, then add to beginning
       _recentDomains.remove(domain);
       _recentDomains.insert(0, domain);
 
-      // Keep only last 8 (mobile optimized)
       if (_recentDomains.length > 8) {
         _recentDomains = _recentDomains.take(8).toList();
       }
@@ -127,12 +123,56 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
     _updateSuggestions();
     widget.onDomainChanged(_controller.text);
 
-    // Auto-save on valid domain (contains .veribiscrm.com)
+    // ENHANCED AUTO-SAVE - More flexible validation
     final text = _controller.text.trim();
-    if (text.contains('.veribiscrm.com') && text.length > 15) {
+    if (_isValidDomain(text)) {
       debugPrint('[Auto Save] Valid domain detected: $text');
       _saveRecentDomain(text);
     }
+  }
+
+  // ENHANCED DOMAIN VALIDATION
+  bool _isValidDomain(String domain) {
+    if (domain.isEmpty || domain.length < 3) return false;
+
+    // 1. Full URL (http/https)
+    if (domain.startsWith('http://') || domain.startsWith('https://')) {
+      return domain.length > 10;
+    }
+
+    // 2. Domain with port (localhost:8080, 192.168.1.100:3000)
+    if (domain.contains(':')) {
+      final parts = domain.split(':');
+      if (parts.length == 2) {
+        final port = int.tryParse(parts[1]);
+        return port != null && port > 0 && port < 65536;
+      }
+    }
+
+    // 3. IP Address (192.168.1.100)
+    if (_isValidIpAddress(domain)) {
+      return true;
+    }
+
+    // 4. Domain with dots (destekcrm.com, demo.veribiscrm.com)
+    if (domain.contains('.')) {
+      final parts = domain.split('.');
+      return parts.length >= 2 && parts.every((part) => part.isNotEmpty);
+    }
+
+    // 5. Plain subdomain (demo, destek) - at least 3 characters
+    return domain.length >= 3 && !domain.contains(' ');
+  }
+
+  bool _isValidIpAddress(String ip) {
+    final parts = ip.split('.');
+    if (parts.length != 4) return false;
+
+    for (final part in parts) {
+      final num = int.tryParse(part);
+      if (num == null || num < 0 || num > 255) return false;
+    }
+    return true;
   }
 
   void _onFocusChanged() {
@@ -140,9 +180,8 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
       _updateSuggestions();
       _pulseController.forward();
     } else {
-      // Save domain when losing focus
       final text = _controller.text.trim();
-      if (text.isNotEmpty && text.contains('.')) {
+      if (_isValidDomain(text)) {
         debugPrint('[Focus Lost] Auto-saving domain: $text');
         _saveRecentDomain(text);
       }
@@ -162,17 +201,64 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
       _selectedIndex = -1;
 
       if (query.isEmpty) {
-        // Show recent domains when empty
         _filteredSuggestions.addAll(_recentDomains);
         _showSuggestions = _recentDomains.isNotEmpty;
       } else {
-        // Filter recent domains only
+        // Filter recent domains
         final recentMatches = _recentDomains.where((domain) => domain.toLowerCase().contains(query)).toList();
 
+        // Add common suggestions if not in recent
+        final commonSuggestions = _getCommonSuggestions(query);
+
         _filteredSuggestions.addAll(recentMatches);
+        for (final suggestion in commonSuggestions) {
+          if (!_filteredSuggestions.contains(suggestion)) {
+            _filteredSuggestions.add(suggestion);
+          }
+        }
+
         _showSuggestions = _filteredSuggestions.isNotEmpty;
       }
     });
+  }
+
+  // ENHANCED COMMON SUGGESTIONS
+  List<String> _getCommonSuggestions(String query) {
+    final suggestions = <String>[];
+
+    if (query.isEmpty) return suggestions;
+
+    // 1. Veribis domain suggestions
+    if (!query.contains('.')) {
+      suggestions.add('$query.veribiscrm.com');
+    }
+
+    // 2. Common TLD suggestions
+    if (!query.contains('.') && query.length >= 3) {
+      suggestions.addAll([
+        '$query.com',
+        '$query.com.tr',
+        '$query.net',
+      ]);
+    }
+
+    // 3. Development suggestions
+    if (query.contains('local') || query.contains('dev') || query.contains('test')) {
+      if (!query.contains(':')) {
+        suggestions.addAll([
+          '$query:8080',
+          '$query:3000',
+          '$query:5000',
+        ]);
+      }
+    }
+
+    // 4. HTTPS variations for custom domains
+    if (query.contains('.') && !query.startsWith('http')) {
+      suggestions.add('https://$query');
+    }
+
+    return suggestions.take(3).toList(); // Limit suggestions
   }
 
   void _selectSuggestion(String domain) {
@@ -209,7 +295,6 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Responsive calculations
         final isSmallScreen = constraints.maxWidth < 400;
         final horizontalPadding = isSmallScreen ? widget.size.padding : widget.size.padding * 1.5;
         final verticalPadding = isSmallScreen ? widget.size.padding * 1.2 : widget.size.padding * 1.5;
@@ -245,7 +330,7 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
+              // Header with enhanced info
               Row(
                 children: [
                   Container(
@@ -267,7 +352,7 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                       ],
                     ),
                     child: Icon(
-                      Icons.search,
+                      Icons.language,
                       color: Colors.white,
                       size: isSmallScreen ? 18 : 20,
                     ),
@@ -305,22 +390,17 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                 ],
               ),
 
-              SizedBox(height: isSmallScreen ? widget.size.padding * 0.8 : widget.size.padding),
-
-              Text(
-                "Şirket domain'inizi yazın. Yazarken öneriler görünecek.",
-                style: TextStyle(
-                  fontSize: isSmallScreen ? widget.size.smallText * 0.9 : widget.size.smallText,
-                  color: Colors.white.withValues(alpha: 0.8),
-                ),
-              ),
-
               SizedBox(height: isSmallScreen ? widget.size.padding * 1.5 : widget.size.padding * 2),
 
-              // Google Style Search Input
+              // Enhanced input with validation feedback
               AnimatedBuilder(
                 animation: _pulseAnimation,
                 builder: (context, child) {
+                  final isValid = _isValidDomain(_controller.text);
+                  final borderColor = _focusNode.hasFocus
+                      ? (isValid ? Colors.green.withValues(alpha: 0.6) : AppColors.primaryColor.withValues(alpha: 0.6))
+                      : Colors.white.withValues(alpha: 0.2);
+
                   return Transform.scale(
                     scale: _pulseAnimation.value,
                     child: KeyboardListener(
@@ -331,13 +411,13 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                           color: Colors.white.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(isSmallScreen ? 20 : 25),
                           border: Border.all(
-                            color: _focusNode.hasFocus ? AppColors.primaryColor.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.2),
+                            color: borderColor,
                             width: _focusNode.hasFocus ? 2 : 1,
                           ),
                           boxShadow: _focusNode.hasFocus
                               ? [
                                   BoxShadow(
-                                    color: AppColors.primaryColor.withValues(alpha: 0.2),
+                                    color: (isValid ? Colors.green : AppColors.primaryColor).withValues(alpha: 0.2),
                                     blurRadius: 15,
                                     spreadRadius: 0,
                                     offset: const Offset(0, 5),
@@ -362,7 +442,7 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: const Color(0xFF1F2937).withValues(alpha: 0.3),
-                            hintText: isSmallScreen ? "domain.com" : "örn: mycompany.veribiscrm.com",
+                            hintText: isSmallScreen ? "domain veya IP" : "destekcrm.com, localhost:8080",
                             hintStyle: TextStyle(
                               color: Colors.white.withValues(alpha: 0.5),
                               fontSize: isSmallScreen ? widget.size.mediumText * 0.85 : widget.size.mediumText * 0.9,
@@ -370,8 +450,10 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                             prefixIcon: Padding(
                               padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
                               child: Icon(
-                                Icons.search,
-                                color: Colors.white.withValues(alpha: 0.7),
+                                isValid && _controller.text.isNotEmpty ? Icons.check_circle : Icons.language,
+                                color: isValid && _controller.text.isNotEmpty
+                                    ? Colors.green.withValues(alpha: 0.8)
+                                    : Colors.white.withValues(alpha: 0.7),
                                 size: isSmallScreen ? 20 : 24,
                               ),
                             ),
@@ -379,23 +461,22 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                                 ? Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      // Save button
-                                      IconButton(
-                                        onPressed: () {
-                                          final domain = _controller.text.trim();
-                                          if (domain.isNotEmpty) {
-                                            _saveRecentDomain(domain);
-                                            _focusNode.unfocus();
-                                          }
-                                        },
-                                        icon: Icon(
-                                          Icons.check_circle,
-                                          color: AppColors.primaryColor.withValues(alpha: 0.8),
-                                          size: isSmallScreen ? 18 : 20,
+                                      if (isValid)
+                                        IconButton(
+                                          onPressed: () {
+                                            final domain = _controller.text.trim();
+                                            if (domain.isNotEmpty) {
+                                              _saveRecentDomain(domain);
+                                              _focusNode.unfocus();
+                                            }
+                                          },
+                                          icon: Icon(
+                                            Icons.bookmark_add,
+                                            color: Colors.green.withValues(alpha: 0.8),
+                                            size: isSmallScreen ? 18 : 20,
+                                          ),
+                                          tooltip: 'Kaydet',
                                         ),
-                                        tooltip: 'Kaydet',
-                                      ),
-                                      // Clear button
                                       IconButton(
                                         onPressed: () {
                                           _controller.clear();
@@ -424,14 +505,14 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                 },
               ),
 
-              // Inline Suggestions with Animation
+              // Enhanced suggestions
               AnimatedSize(
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeInOut,
-                child: _showSuggestions && _focusNode.hasFocus ? _buildInlineSuggestions(isSmallScreen) : const SizedBox.shrink(),
+                child: _showSuggestions && _focusNode.hasFocus ? _buildEnhancedSuggestions(isSmallScreen) : const SizedBox.shrink(),
               ),
 
-              // Quick stats for non-focused state
+              // Enhanced stats for non-focused state
               if (_recentDomains.isNotEmpty && !_focusNode.hasFocus) ...[
                 SizedBox(height: isSmallScreen ? widget.size.padding : widget.size.padding * 1.5),
                 Container(
@@ -449,14 +530,14 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                   child: Row(
                     children: [
                       Icon(
-                        Icons.login,
+                        Icons.history,
                         size: isSmallScreen ? 14 : 16,
                         color: Colors.white.withValues(alpha: 0.6),
                       ),
                       SizedBox(width: isSmallScreen ? 6 : 8),
                       Expanded(
                         child: Text(
-                          "Son giriş: ${_recentDomains.first}",
+                          "Son: ${_recentDomains.first}",
                           style: TextStyle(
                             fontSize: isSmallScreen ? widget.size.smallText * 0.85 : widget.size.smallText,
                             color: Colors.white.withValues(alpha: 0.6),
@@ -475,7 +556,7 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
     );
   }
 
-  Widget _buildInlineSuggestions(bool isSmallScreen) {
+  Widget _buildEnhancedSuggestions(bool isSmallScreen) {
     return Container(
       margin: EdgeInsets.only(top: isSmallScreen ? widget.size.padding * 0.8 : widget.size.padding),
       constraints: BoxConstraints(
@@ -499,7 +580,6 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header if showing recent
           if (_controller.text.isEmpty && _recentDomains.isNotEmpty) ...[
             Padding(
               padding: EdgeInsets.all(isSmallScreen ? widget.size.padding * 0.8 : widget.size.padding),
@@ -512,7 +592,7 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                   ),
                   SizedBox(width: isSmallScreen ? 6 : 8),
                   Text(
-                    "Son Kullanılanlar",
+                    "Önerileri Seç",
                     style: TextStyle(
                       fontSize: isSmallScreen ? widget.size.smallText * 0.85 : widget.size.smallText,
                       color: Colors.white.withValues(alpha: 0.7),
@@ -522,13 +602,8 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                 ],
               ),
             ),
-            Container(
-              height: 1,
-              color: Colors.white.withValues(alpha: 0.1),
-            ),
+            Container(height: 1, color: Colors.white.withValues(alpha: 0.1)),
           ],
-
-          // Suggestions list
           Flexible(
             child: ListView.builder(
               shrinkWrap: true,
@@ -537,6 +612,7 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
               itemBuilder: (context, index) {
                 final domain = _filteredSuggestions[index];
                 final isSelected = index == _selectedIndex;
+                final isRecent = _recentDomains.contains(domain);
 
                 return InkWell(
                   onTap: () => _selectSuggestion(domain),
@@ -556,7 +632,7 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                     child: Row(
                       children: [
                         Icon(
-                          Icons.login,
+                          isRecent ? Icons.history : Icons.auto_awesome,
                           size: isSmallScreen ? 16 : 18,
                           color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.7),
                         ),
@@ -575,7 +651,7 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                                 overflow: TextOverflow.ellipsis,
                               ),
                               Text(
-                                "Giriş yapıldı",
+                                isRecent ? "Daha önce kullanıldı" : "Öneri",
                                 style: TextStyle(
                                   fontSize: isSmallScreen ? widget.size.smallText * 0.8 : widget.size.smallText * 0.85,
                                   color: Colors.white.withValues(alpha: 0.6),
@@ -584,18 +660,19 @@ class _DomainSelectionFormState extends State<DomainSelectionForm> with TickerPr
                             ],
                           ),
                         ),
-                        IconButton(
-                          onPressed: () => _removeRecentDomain(domain),
-                          icon: Icon(
-                            Icons.close,
-                            size: isSmallScreen ? 14 : 16,
-                            color: Colors.white.withValues(alpha: 0.5),
+                        if (isRecent)
+                          IconButton(
+                            onPressed: () => _removeRecentDomain(domain),
+                            icon: Icon(
+                              Icons.close,
+                              size: isSmallScreen ? 14 : 16,
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
+                            constraints: BoxConstraints(
+                              minWidth: isSmallScreen ? 28 : 32,
+                              minHeight: isSmallScreen ? 28 : 32,
+                            ),
                           ),
-                          constraints: BoxConstraints(
-                            minWidth: isSmallScreen ? 28 : 32,
-                            minHeight: isSmallScreen ? 28 : 32,
-                          ),
-                        ),
                       ],
                     ),
                   ),

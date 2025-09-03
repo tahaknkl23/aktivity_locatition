@@ -114,7 +114,7 @@ class _CompanyListScreenState extends State<CompanyListScreen> with ListStateMix
         });
 
         // Debug: Cache durumu
-        print('📊 [COMPANY_CACHE] TOPLU YÜKLENDİ: ${_allCompanies.length}/$_apiTotalCount firma');
+        debugPrint('📊 [COMPANY_CACHE] TOPLU YÜKLENDİ: ${_allCompanies.length}/$_apiTotalCount firma');
 
         _applySearch();
       }

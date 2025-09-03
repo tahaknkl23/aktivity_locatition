@@ -1,12 +1,12 @@
+// lib/core/widgets/common/searchable_dropdown_widget.dart - YENİ DOSYA
 import 'package:flutter/material.dart';
-import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_sizes.dart';
+import '../../constants/app_colors.dart';
+import '../../constants/app_sizes.dart';
 import '../../../data/models/dynamic_form/form_field_model.dart';
 
-/// Arama özellikli dropdown widget
 class SearchableDropdownWidget extends StatefulWidget {
-  final String label;
-  final String? hint;
+  final String? label;
+  final String hint;
   final List<DropdownOption> options;
   final dynamic value;
   final Function(dynamic) onChanged;
@@ -16,8 +16,8 @@ class SearchableDropdownWidget extends StatefulWidget {
 
   const SearchableDropdownWidget({
     super.key,
-    required this.label,
-    this.hint,
+    this.label,
+    this.hint = 'Seçiniz...',
     required this.options,
     this.value,
     required this.onChanged,
@@ -33,351 +33,282 @@ class SearchableDropdownWidget extends StatefulWidget {
 class _SearchableDropdownWidgetState extends State<SearchableDropdownWidget> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  final LayerLink _layerLink = LayerLink();
 
-  OverlayEntry? _overlayEntry;
-  List<DropdownOption> _filteredOptions = [];
   bool _isOpen = false;
-  String _displayText = '';
+  List<DropdownOption> _filteredOptions = [];
+  DropdownOption? _selectedOption;
 
   @override
   void initState() {
     super.initState();
+    _initializeValue();
     _filteredOptions = List.from(widget.options);
-    _updateDisplayText();
-    _focusNode.addListener(_onFocusChanged);
-  }
-
-  @override
-  void dispose() {
-    _removeOverlay();
-    _searchController.dispose();
-    _focusNode.dispose();
-    super.dispose();
   }
 
   @override
   void didUpdateWidget(SearchableDropdownWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.options != widget.options || oldWidget.value != widget.value) {
+
+    if (oldWidget.options != widget.options) {
       _filteredOptions = List.from(widget.options);
-      _updateDisplayText();
+      _filterOptions(_searchController.text);
+    }
+
+    if (oldWidget.value != widget.value) {
+      _initializeValue();
     }
   }
 
-  void _updateDisplayText() {
+  void _initializeValue() {
+    _selectedOption = null;
+
     if (widget.value != null) {
-      final selectedOption = widget.options.firstWhere(
-        (option) => option.value == widget.value,
-        orElse: () => DropdownOption(value: widget.value, text: widget.value.toString()),
-      );
-      _displayText = selectedOption.text;
+      // Value'dan option bulma
+      _selectedOption = widget.options.where((option) {
+        return option.value == widget.value || option.text == widget.value || option.value.toString() == widget.value.toString();
+      }).firstOrNull;
+    }
+
+    _updateSearchText();
+  }
+
+  void _updateSearchText() {
+    if (_selectedOption != null) {
+      _searchController.text = _selectedOption!.text;
     } else {
-      _displayText = '';
+      _searchController.text = '';
     }
   }
 
-  void _onFocusChanged() {
-    if (_focusNode.hasFocus && !_isOpen) {
-      _openDropdown();
-    } else if (!_focusNode.hasFocus && _isOpen) {
-      Future.delayed(Duration(milliseconds: 100), () {
-        if (mounted && _isOpen) {
-          _closeDropdown();
-        }
-      });
-    }
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _focusNode.dispose();
+    super.dispose();
   }
 
-  void _openDropdown() {
-    if (!widget.isEnabled || _isOpen) return;
-
+  void _filterOptions(String searchTerm) {
     setState(() {
-      _isOpen = true;
-    });
-
-    _searchController.clear();
-    _filteredOptions = List.from(widget.options);
-
-    _overlayEntry = _createOverlayEntry();
-    Overlay.of(context).insert(_overlayEntry!);
-  }
-
-  void _closeDropdown() {
-    if (!_isOpen) return;
-
-    setState(() {
-      _isOpen = false;
-    });
-
-    _removeOverlay();
-    _searchController.clear();
-    _focusNode.unfocus();
-  }
-
-  void _removeOverlay() {
-    _overlayEntry?.remove();
-    _overlayEntry = null;
-  }
-
-  void _filterOptions(String query) {
-    setState(() {
-      if (query.isEmpty) {
+      if (searchTerm.isEmpty) {
         _filteredOptions = List.from(widget.options);
       } else {
-        _filteredOptions = widget.options.where((option) => option.text.toLowerCase().contains(query.toLowerCase())).toList();
+        _filteredOptions = widget.options.where((option) {
+          return option.text.toLowerCase().contains(searchTerm.toLowerCase());
+        }).toList();
       }
     });
-    _overlayEntry?.markNeedsBuild();
   }
 
-  void _selectOption(DropdownOption option) {
-    widget.onChanged(option.value);
-    _updateDisplayText();
-    _closeDropdown();
+  void _toggleDropdown() {
+    if (!widget.isEnabled) return;
+
+    setState(() {
+      _isOpen = !_isOpen;
+    });
+
+    if (_isOpen) {
+      _focusNode.requestFocus();
+      _filterOptions(_searchController.text);
+    } else {
+      _focusNode.unfocus();
+    }
   }
 
-  OverlayEntry _createOverlayEntry() {
-    final renderBox = context.findRenderObject() as RenderBox;
-    final size2 = renderBox.size;
-    final position = renderBox.localToGlobal(Offset.zero);
-    final screenHeight = MediaQuery.of(context).size.height;
+  void _selectOption(DropdownOption? option) {
+    setState(() {
+      _selectedOption = option;
+      _isOpen = false;
+      _updateSearchText();
+    });
 
-    final spaceBelow = screenHeight - position.dy - size2.height;
-    final spaceAbove = position.dy;
-    final openUpwards = spaceBelow < 300 && spaceAbove > spaceBelow;
+    _focusNode.unfocus();
+    widget.onChanged(option?.value);
+  }
 
-    return OverlayEntry(
-      builder: (context) => Stack(
-        children: [
-          // Invisible barrier
-          GestureDetector(
-            onTap: _closeDropdown,
-            child: Container(
-              width: MediaQuery.of(context).size.width,
-              height: MediaQuery.of(context).size.height,
-              color: Colors.transparent,
-            ),
-          ),
-
-          // Dropdown menu
-          Positioned(
-            left: position.dx,
-            top: openUpwards ? position.dy - 300 : position.dy + size2.height + 4,
-            width: size2.width,
-            child: Material(
-              elevation: 8,
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                constraints: BoxConstraints(
-                  maxHeight: 300,
-                  minHeight: 0,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Search bar
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                            color: AppColors.border.withValues(alpha: 0.3),
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.search,
-                            color: AppColors.textSecondary,
-                            size: 18,
-                          ),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              autofocus: false,
-                              decoration: InputDecoration(
-                                hintText: 'Ara...',
-                                border: InputBorder.none,
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(vertical: 4),
-                                hintStyle: TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: AppColors.textPrimary,
-                              ),
-                              onChanged: _filterOptions,
-                            ),
-                          ),
-                          if (_searchController.text.isNotEmpty)
-                            GestureDetector(
-                              onTap: () {
-                                _searchController.clear();
-                                _filterOptions('');
-                              },
-                              child: Icon(
-                                Icons.clear,
-                                color: AppColors.textSecondary,
-                                size: 18,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-
-                    // Options list
-                    Flexible(
-                      child: _filteredOptions.isEmpty
-                          ? Container(
-                              padding: EdgeInsets.all(16),
-                              alignment: Alignment.center,
-                              child: Text(
-                                'Sonuç bulunamadı',
-                                style: TextStyle(
-                                  color: AppColors.textTertiary,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            )
-                          : ListView.separated(
-                              shrinkWrap: true,
-                              padding: EdgeInsets.symmetric(vertical: 4),
-                              itemCount: _filteredOptions.length,
-                              separatorBuilder: (context, index) => Divider(
-                                height: 1,
-                                color: AppColors.border.withValues(alpha: 0.1),
-                              ),
-                              itemBuilder: (context, index) {
-                                final option = _filteredOptions[index];
-                                final isSelected = option.value == widget.value;
-
-                                return InkWell(
-                                  onTap: () => _selectOption(option),
-                                  child: Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isSelected ? AppColors.primary.withValues(alpha: 0.1) : Colors.transparent,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        if (isSelected) ...[
-                                          Icon(
-                                            Icons.check,
-                                            color: AppColors.primary,
-                                            size: 18,
-                                          ),
-                                          SizedBox(width: 12),
-                                        ] else ...[
-                                          SizedBox(width: 30),
-                                        ],
-                                        Expanded(
-                                          child: Text(
-                                            option.text,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              color: isSelected ? AppColors.primary : AppColors.textPrimary,
-                                              fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+  void _clearSelection() {
+    _selectOption(null);
   }
 
   @override
   Widget build(BuildContext context) {
     final size = AppSizes.of(context);
 
-    return CompositedTransformTarget(
-      link: _layerLink,
-      child: Focus(
-        focusNode: _focusNode,
-        onKeyEvent: (node, event) {
-          if (event.logicalKey.keyLabel == 'Escape' && _isOpen) {
-            _closeDropdown();
-            return KeyEventResult.handled;
-          }
-          return KeyEventResult.ignored;
-        },
-        child: GestureDetector(
-          onTap: widget.isEnabled ? _openDropdown : null,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Label (sadece widget.label varsa)
+        if (widget.label != null && widget.label!.isNotEmpty) ...[
+          Padding(
+            padding: EdgeInsets.only(bottom: size.smallSpacing),
+            child: RichText(
+              text: TextSpan(
+                text: widget.label!,
+                style: TextStyle(
+                  fontSize: size.textSize,
+                  fontWeight: FontWeight.w600,
+                  color: widget.isEnabled ? AppColors.textPrimary : AppColors.textSecondary,
+                ),
+                children: [
+                  if (widget.isRequired)
+                    TextSpan(
+                      text: ' *',
+                      style: TextStyle(
+                        fontSize: size.textSize,
+                        color: AppColors.error,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+
+        // Dropdown Field
+        GestureDetector(
+          onTap: _toggleDropdown,
           child: Container(
             decoration: BoxDecoration(
-              color: widget.isEnabled ? AppColors.surface : AppColors.surfaceVariant,
               borderRadius: BorderRadius.circular(size.formFieldBorderRadius),
               border: Border.all(
                 color: _isOpen ? AppColors.primary : AppColors.border,
                 width: _isOpen ? 2 : 1,
               ),
+              color: widget.isEnabled ? AppColors.surface : AppColors.surfaceVariant,
             ),
-            padding: EdgeInsets.symmetric(
-              horizontal: size.cardPadding,
-              vertical: size.cardPadding * 0.8,
-            ),
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: Text(
-                    _displayText.isEmpty ? (widget.hint ?? 'Seçiniz...') : _displayText,
-                    style: TextStyle(
+                // Search/Display Field
+                TextFormField(
+                  controller: _searchController,
+                  focusNode: _focusNode,
+                  enabled: widget.isEnabled && _isOpen,
+                  readOnly: !_isOpen,
+                  onChanged: _filterOptions,
+                  onTap: _toggleDropdown,
+                  style: TextStyle(fontSize: size.textSize),
+                  decoration: InputDecoration(
+                    hintText: widget.hint,
+                    hintStyle: TextStyle(
                       fontSize: size.textSize,
-                      color: _displayText.isEmpty ? AppColors.textSecondary : AppColors.textPrimary,
+                      color: AppColors.textSecondary,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Clear button
+                        if (_selectedOption != null && widget.isEnabled)
+                          IconButton(
+                            onPressed: _clearSelection,
+                            icon: Icon(
+                              Icons.clear,
+                              color: AppColors.textSecondary,
+                              size: 18,
+                            ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 24,
+                              minHeight: 24,
+                            ),
+                          ),
+                        // Dropdown arrow
+                        Icon(
+                          _isOpen ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                          color: widget.isEnabled ? AppColors.primary : AppColors.textTertiary,
+                        ),
+                        SizedBox(width: size.smallSpacing),
+                      ],
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: size.cardPadding,
+                      vertical: size.cardPadding * 0.8,
+                    ),
                   ),
                 ),
-                SizedBox(width: size.smallSpacing),
-                AnimatedRotation(
-                  turns: _isOpen ? 0.5 : 0,
-                  duration: Duration(milliseconds: 200),
-                  child: Icon(
-                    Icons.keyboard_arrow_down,
-                    color: widget.isEnabled ? (_isOpen ? AppColors.primary : AppColors.textSecondary) : AppColors.textTertiary,
-                    size: 24,
+
+                // Dropdown List
+                if (_isOpen) ...[
+                  Divider(height: 1, color: AppColors.border),
+                  Container(
+                    constraints: BoxConstraints(maxHeight: 200),
+                    child: _buildDropdownList(size),
                   ),
-                ),
+                ],
               ],
             ),
           ),
         ),
-      ),
+      ],
+    );
+  }
+
+  Widget _buildDropdownList(AppSizes size) {
+    if (widget.options.isEmpty) {
+      return Container(
+        padding: EdgeInsets.all(size.cardPadding),
+        child: Text(
+          'Seçenek bulunamadı',
+          style: TextStyle(
+            fontSize: size.textSize,
+            color: AppColors.textSecondary,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    if (_filteredOptions.isEmpty) {
+      return Container(
+        padding: EdgeInsets.all(size.cardPadding),
+        child: Text(
+          'Arama sonucu bulunamadı',
+          style: TextStyle(
+            fontSize: size.textSize,
+            color: AppColors.textSecondary,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      shrinkWrap: true,
+      itemCount: _filteredOptions.length,
+      itemBuilder: (context, index) {
+        final option = _filteredOptions[index];
+        final isSelected = _selectedOption?.value == option.value;
+
+        return InkWell(
+          onTap: () => _selectOption(option),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: size.cardPadding,
+              vertical: size.cardPadding * 0.7,
+            ),
+            decoration: BoxDecoration(
+              color: isSelected ? AppColors.primary.withValues(alpha: 0.1) : null,
+              border: isSelected
+                  ? Border(
+                      left: BorderSide(
+                        color: AppColors.primary,
+                        width: 3,
+                      ),
+                    )
+                  : null,
+            ),
+            child: Text(
+              option.text,
+              style: TextStyle(
+                fontSize: size.textSize,
+                color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

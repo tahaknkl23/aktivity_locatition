@@ -59,6 +59,7 @@ class _DomainSelectionScreenState extends State<DomainSelectionScreen> with Tick
     super.dispose();
   }
 
+  // FIXED DOMAIN SAVING LOGIC
   Future<void> saveDomainAndNavigate() async {
     if (selectedDomain == null || selectedDomain!.trim().isEmpty) {
       _showErrorSnackBar("Lütfen bir domain girin.");
@@ -70,24 +71,52 @@ class _DomainSelectionScreenState extends State<DomainSelectionScreen> with Tick
     try {
       await Future.delayed(const Duration(milliseconds: 1000));
 
-      // Custom domain için subdomain çıkarma
+      final inputDomain = selectedDomain!.trim();
+
+      // FLEXIBLE SUBDOMAIN EXTRACTION - Fixed Logic
       String subdomain;
-      if (domainMap.containsKey(selectedDomain!)) {
-        subdomain = domainMap[selectedDomain!]!.trim();
-      } else {
-        // Custom domain için subdomain çıkar (domain.veribiscrm.com -> domain)
-        final parts = selectedDomain!.split('.');
-        if (parts.length >= 3 && parts[1] == 'veribiscrm' && parts[2] == 'com') {
-          subdomain = parts[0];
-        } else {
-          subdomain = selectedDomain!.trim();
-        }
+      String baseUrl;
+
+      debugPrint("[DOMAIN_SAVE] Input domain: $inputDomain");
+
+      // 1. Full URL provided (http/https)
+      if (inputDomain.startsWith('http://') || inputDomain.startsWith('https://')) {
+        baseUrl = inputDomain;
+        subdomain = _extractSubdomainFromUrl(inputDomain);
+      }
+      // 2. Domain with port (localhost:8080)
+      else if (inputDomain.contains(':') && !inputDomain.contains('://')) {
+        baseUrl = 'http://$inputDomain';
+        subdomain = inputDomain.split(':')[0];
+      }
+      // 3. Custom domain (destekcrm.com - NOT veribis)
+      else if (inputDomain.contains('.') && !inputDomain.contains('veribiscrm.com')) {
+        baseUrl = 'https://$inputDomain';
+        subdomain = inputDomain; // KEEP FULL DOMAIN as subdomain
+      }
+      // 4. Veribis domain (demo.veribiscrm.com)
+      else if (inputDomain.contains('.veribiscrm.com')) {
+        baseUrl = 'https://$inputDomain';
+        subdomain = inputDomain.split('.')[0]; // Extract subdomain part
+      }
+      // 5. Plain subdomain (demo, destek)
+      else {
+        baseUrl = 'https://$inputDomain.veribiscrm.com';
+        subdomain = inputDomain;
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('subdomain', subdomain);
+      debugPrint("[DOMAIN_SAVE] Base URL: $baseUrl");
+      debugPrint("[DOMAIN_SAVE] Subdomain to save: $subdomain");
 
-      debugPrint("[Domain Seçildi] $selectedDomain -> Subdomain: $subdomain");
+      final prefs = await SharedPreferences.getInstance();
+
+      // SAVE BOTH for flexibility
+      await prefs.setString('subdomain', subdomain);
+      await prefs.setString('base_url', baseUrl);
+
+      debugPrint("[DOMAIN_SAVE] Successfully saved:");
+      debugPrint("[DOMAIN_SAVE] - subdomain: $subdomain");
+      debugPrint("[DOMAIN_SAVE] - base_url: $baseUrl");
 
       if (mounted) {
         _showSuccessSnackBar("Domain başarıyla kaydedildi!");
@@ -100,7 +129,7 @@ class _DomainSelectionScreenState extends State<DomainSelectionScreen> with Tick
         Navigator.pushReplacementNamed(context, AppRoutes.login);
       }
     } catch (e) {
-      debugPrint('Domain kaydetme hatası: $e');
+      debugPrint('[DOMAIN_SAVE] Error: $e');
 
       if (mounted) {
         setState(() => _isLoading = false);
@@ -109,8 +138,33 @@ class _DomainSelectionScreenState extends State<DomainSelectionScreen> with Tick
     }
   }
 
+  // Helper method to extract subdomain from full URL
+  String _extractSubdomainFromUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final host = uri.host;
+
+      debugPrint("[SUBDOMAIN_EXTRACT] Host: $host");
+
+      // For veribis domains, extract subdomain part
+      if (host.contains('veribiscrm.com')) {
+        final parts = host.split('.');
+        if (parts.length >= 3) {
+          return parts[0]; // Return subdomain part
+        }
+      }
+
+      // For custom domains, return full host
+      return host;
+    } catch (e) {
+      debugPrint("[SUBDOMAIN_EXTRACT] Error: $e");
+      return url;
+    }
+  }
+
   void onDomainChanged(String domain) {
     setState(() => selectedDomain = domain.trim());
+    debugPrint("[DOMAIN_CHANGED] Selected: $domain");
   }
 
   void _showErrorSnackBar(String message) {
@@ -249,8 +303,6 @@ class _DomainSelectionScreenState extends State<DomainSelectionScreen> with Tick
                             selectedDomain: selectedDomain,
                             onPressed: saveDomainAndNavigate,
                           ),
-
-                          SizedBox(height: size.height * 0.02),
                         ],
                       ),
                     ),

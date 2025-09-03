@@ -1,5 +1,5 @@
 import 'dart:convert';
-
+import 'package:aktivity_location_app/core/helpers/dynamic_cascade_helper.dart';
 import 'package:flutter/material.dart';
 
 /// Dynamic form field model that handles all form field types
@@ -38,12 +38,20 @@ class DynamicFormField {
 
   factory DynamicFormField.fromJson(Map<String, dynamic> json) {
     try {
+      debugPrint('[FormField] 🔍 Parsing field: ${json.keys.toList()}');
+      debugPrint('[FormField] 🔍 Label: ${json['label']}');
+      debugPrint('[FormField] 🔍 Value: ${json['value']}');
+
       final widget = json['widget'] as Map<String, dynamic>? ?? {};
       final properties = widget['properties'] as Map<String, dynamic>? ?? {};
       final widgetName = widget['name'] as String? ?? 'TextBox';
 
+      debugPrint('[FormField] 🔍 Widget name: $widgetName');
+      debugPrint('[FormField] 🔍 Properties: ${properties.keys.toList()}');
+
       // Determine field type based on widget name and properties
       FormFieldType fieldType = _determineFieldType(widgetName, properties);
+      debugPrint('[FormField] 🔍 Determined type: $fieldType');
 
       // Parse dropdown options if exists
       List<DropdownOption>? options;
@@ -51,7 +59,25 @@ class DynamicFormField {
         options = _parseDropdownOptions(widget);
       }
 
-      return DynamicFormField(
+      // 🔧 SAFE INTEGER PARSING - String'leri int'e çevir
+      int safeParseInt(dynamic value, int defaultValue) {
+        if (value == null) return defaultValue;
+        if (value is int) return value;
+        if (value is String) {
+          return int.tryParse(value) ?? defaultValue;
+        }
+        return defaultValue;
+      }
+
+      final columnWidth = safeParseInt(json['columnWidth'], 12);
+      final labelWidth = safeParseInt(json['labelWidth'], 3);
+      final controlWidth = safeParseInt(json['controlWidth'], 9);
+
+      debugPrint('[FormField] 🔍 Column width: $columnWidth');
+      debugPrint('[FormField] 🔍 Label width: $labelWidth');
+      debugPrint('[FormField] 🔍 Control width: $controlWidth');
+
+      final field = DynamicFormField(
         key: json['value'] as String? ?? '',
         label: json['label'] as String? ?? '',
         labelTooltip: json['labelTooltip'] as String?,
@@ -59,16 +85,22 @@ class DynamicFormField {
         isRequired: properties['required'] as bool? ?? false,
         isEnabled: properties['enabled'] as bool? ?? true,
         type: fieldType,
-        columnWidth: json['columnWidth'] as int? ?? 12,
-        labelWidth: json['labelWidth'] as int? ?? 3,
-        controlWidth: json['controlWidth'] as int? ?? 9,
+        columnWidth: columnWidth,
+        labelWidth: labelWidth,
+        controlWidth: controlWidth,
         widget: FormFieldWidget.fromJson(widget),
         mask: properties['mask'] as String?,
         options: options,
         isMasterControl: json['IsMasterControl'] as bool? ?? false,
       );
-    } catch (e) {
-      debugPrint('[FormField] Parse error: $e');
+
+      debugPrint('[FormField] ✅ Field parsed: ${field.label} (${field.type})');
+      return field;
+    } catch (e, stackTrace) {
+      debugPrint('[FormField] ❌ Parse error: $e');
+      debugPrint('[FormField] ❌ StackTrace: $stackTrace');
+      debugPrint('[FormField] ❌ JSON: $json');
+
       // Return default text field on error
       return DynamicFormField(
         key: json['value'] as String? ?? 'unknown',
@@ -87,6 +119,9 @@ class DynamicFormField {
   }
 
   static FormFieldType _determineFieldType(String widgetName, Map<String, dynamic> properties) {
+    debugPrint('[FIELD_TYPE] 🔍 Determining type for widget: $widgetName');
+    debugPrint('[FIELD_TYPE] 🔍 Widget properties: $properties');
+
     switch (widgetName.toLowerCase()) {
       case 'textbox':
         return FormFieldType.text;
@@ -98,7 +133,7 @@ class DynamicFormField {
         return FormFieldType.date;
       case 'dropdownlist':
         return FormFieldType.dropdown;
-      case 'multiselectbox': // 🔥 MultiSelectBox'ı multiSelect olarak işle
+      case 'multiselectbox':
         return FormFieldType.multiSelect;
       case 'checkbox':
         return FormFieldType.checkbox;
@@ -111,6 +146,7 @@ class DynamicFormField {
       case 'empty':
         return FormFieldType.empty;
       default:
+        debugPrint('[FIELD_TYPE] ⚠️ Unknown widget type: $widgetName, defaulting to text');
         return FormFieldType.text;
     }
   }
@@ -234,32 +270,50 @@ class DynamicFormSection {
 
   factory DynamicFormSection.fromJson(Map<String, dynamic> json) {
     try {
-      // 🔍 DEBUG: Raw JSON kontrolü
       debugPrint('[FORM_SECTION] 🔍 Raw JSON keys: ${json.keys.toList()}');
+      debugPrint('[FORM_SECTION] 🔍 Section label: ${json['label']}');
       debugPrint('[FORM_SECTION] 🔍 Fields key exists: ${json.containsKey('Fields')}');
 
       final fieldsJson = json['Fields'] as List? ?? [];
       debugPrint('[FORM_SECTION] 🔍 Fields count in JSON: ${fieldsJson.length}');
 
       // Parse fields
-      final fields = fieldsJson.whereType<Map<String, dynamic>>().map((field) {
-        debugPrint('[FORM_SECTION] 🔍 Parsing field: ${field.keys.toList()}');
-        return DynamicFormField.fromJson(field);
-      }).where((field) {
-        debugPrint('[FORM_SECTION] 🔍 Field visible check: ${field.label} -> ${field.isVisible}');
-        return field.isVisible;
-      }).toList();
+      final fields = <DynamicFormField>[];
 
-      debugPrint('[FORM_SECTION] 🔍 Final fields count: ${fields.length}');
+      for (int i = 0; i < fieldsJson.length; i++) {
+        try {
+          final fieldData = fieldsJson[i];
+          debugPrint('[FORM_SECTION] 🔍 Parsing field $i: ${fieldData.keys.toList()}');
+
+          if (fieldData is Map<String, dynamic>) {
+            final field = DynamicFormField.fromJson(fieldData);
+            if (field.isVisible) {
+              fields.add(field);
+              debugPrint('[FORM_SECTION] ✅ Field $i added: ${field.label}');
+            } else {
+              debugPrint('[FORM_SECTION] 🔍 Field $i hidden: ${field.label}');
+            }
+          } else {
+            debugPrint('[FORM_SECTION] ❌ Field $i is not a Map: ${fieldData.runtimeType}');
+          }
+        } catch (e) {
+          debugPrint('[FORM_SECTION] ❌ Failed to parse field $i: $e');
+        }
+      }
+
+      debugPrint('[FORM_SECTION] ✅ Section parsed: ${json['label']} with ${fields.length} fields');
 
       return DynamicFormSection(
         label: json['label'] as String? ?? '',
-        width: json['width'] as int? ?? 12,
+        width: int.tryParse(json['width']?.toString() ?? '12') ?? 12,
         fields: fields,
         orderIndex: json['OrderIndex'] as int? ?? 0,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('[FORM_SECTION] ❌ Parse error: $e');
+      debugPrint('[FORM_SECTION] ❌ StackTrace: $stackTrace');
+      debugPrint('[FORM_SECTION] ❌ JSON: $json');
+
       return DynamicFormSection(
         label: 'Parse Error',
         width: 12,
@@ -294,20 +348,40 @@ class DynamicFormModel {
 
   factory DynamicFormModel.fromJson(Map<String, dynamic> json) {
     try {
+      debugPrint('[DynamicForm] 🔍 Parsing form model...');
+
       final formData = json['Data']?['Form'] as Map<String, dynamic>? ?? {};
       final sectionsJson = formData['Sections'] as String? ?? '[]';
+
+      debugPrint('[DynamicForm] 🔍 Form name: ${formData['FormName']}');
+      debugPrint('[DynamicForm] 🔍 Sections JSON length: ${sectionsJson.length}');
 
       // Parse sections JSON string
       List<dynamic> sectionsList = [];
       try {
         sectionsList = jsonDecode(sectionsJson) as List? ?? [];
+        debugPrint('[DynamicForm] ✅ Sections parsed: ${sectionsList.length} sections');
       } catch (e) {
-        debugPrint('[DynamicForm] Sections parse error: $e');
+        debugPrint('[DynamicForm] ❌ Sections parse error: $e');
       }
 
-      final sections = sectionsList.whereType<Map<String, dynamic>>().map((section) => DynamicFormSection.fromJson(section)).toList();
+      final sections = <DynamicFormSection>[];
+      for (int i = 0; i < sectionsList.length; i++) {
+        try {
+          final sectionData = sectionsList[i];
+          if (sectionData is Map<String, dynamic>) {
+            final section = DynamicFormSection.fromJson(sectionData);
+            sections.add(section);
+            debugPrint('[DynamicForm] ✅ Section $i parsed: ${section.label} (${section.fields.length} fields)');
+          } else {
+            debugPrint('[DynamicForm] ❌ Section $i is not a Map: ${sectionData.runtimeType}');
+          }
+        } catch (e) {
+          debugPrint('[DynamicForm] ❌ Failed to parse section $i: $e');
+        }
+      }
 
-      return DynamicFormModel(
+      final model = DynamicFormModel(
         formName: formData['FormName'] as String? ?? '',
         description: formData['Description'] as String? ?? '',
         formId: formData['Id'] as int? ?? 0,
@@ -317,8 +391,16 @@ class DynamicFormModel {
         data: json['Data']?['Data'] as Map<String, dynamic>? ?? {},
         pristineData: json['Data']?['PristineData'] as Map<String, dynamic>? ?? {},
       );
-    } catch (e) {
-      debugPrint('[DynamicForm] Parse error: $e');
+
+      debugPrint('[DynamicForm] ✅ Form model created: ${model.formName}');
+      debugPrint('[DynamicForm] ✅ Total sections: ${model.sections.length}');
+      debugPrint('[DynamicForm] ✅ Total fields: ${model.allFields.length}');
+
+      return model;
+    } catch (e, stackTrace) {
+      debugPrint('[DynamicForm] ❌ Parse error: $e');
+      debugPrint('[DynamicForm] ❌ StackTrace: $stackTrace');
+
       return DynamicFormModel(
         formName: 'Unknown Form',
         description: '',
@@ -348,14 +430,22 @@ class DynamicFormModel {
     }
     return null;
   }
-}
 
-/// Helper to decode JSON string safely
-dynamic jsonDecode(String source) {
-  try {
-    return json.decode(source);
-  } catch (e) {
-    debugPrint('[JSON] Decode error: $e');
-    return null;
+  List<DynamicFormField> get cascadeFields {
+    return allFields.where((field) => field.isCascadeField).toList();
+  }
+
+  /// Debug cascade info for all fields
+  void debugCascadeFields() {
+    debugPrint('[FORM_MODEL] ===== CASCADE FIELDS DEBUG =====');
+
+    final cascadeFields = this.cascadeFields;
+    debugPrint('[FORM_MODEL] Total cascade fields: ${cascadeFields.length}');
+
+    for (final field in cascadeFields) {
+      field.debugCascadeInfo();
+    }
+
+    debugPrint('[FORM_MODEL] =====================================');
   }
 }

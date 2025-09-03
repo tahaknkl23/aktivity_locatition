@@ -46,21 +46,37 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // 🎯 Domain'i yükle ve o domain'e özel kullanıcı bilgilerini getir
+  // FIXED: Domain'i base_url'den yükle, subdomain'den URL oluşturma
   Future<void> _loadCurrentDomain() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final baseUrl = prefs.getString('base_url');
       final subdomain = prefs.getString('subdomain');
 
-      if (subdomain != null && subdomain.isNotEmpty) {
+      if (baseUrl != null && baseUrl.isNotEmpty) {
+        // Use base_url directly - don't reconstruct
+        final displayDomain = baseUrl.replaceAll('https://', '').replaceAll('http://', '');
         setState(() {
-          _currentDomain = '$subdomain.veribiscrm.com';
+          _currentDomain = displayDomain;
         });
 
-        // Bu domain'e özel kullanıcı bilgilerini yükle
+        debugPrint('[LOGIN] Current domain from base_url: $_currentDomain');
+
+        // Domain'e özel kullanıcı bilgilerini yükle
+        if (subdomain != null) {
+          await _loadDomainSpecificCredentials(subdomain);
+        }
+      } else if (subdomain != null && subdomain.isNotEmpty) {
+        // Fallback: construct from subdomain only if no base_url
+        final displayDomain = subdomain.contains('.') ? subdomain : '$subdomain.veribiscrm.com';
+        setState(() {
+          _currentDomain = displayDomain;
+        });
+
+        // Domain'e özel kullanıcı bilgilerini yükle
         await _loadDomainSpecificCredentials(subdomain);
 
-        debugPrint('[LOGIN] Current domain: $_currentDomain');
+        debugPrint('[LOGIN] Current domain from subdomain fallback: $_currentDomain');
       } else {
         setState(() {
           _currentDomain = null;

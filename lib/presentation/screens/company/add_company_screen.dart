@@ -1,3 +1,4 @@
+import 'package:aktivity_location_app/core/helpers/dynamic_cascade_helper.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -20,6 +21,8 @@ class AddCompanyScreen extends StatefulWidget {
 
 class _AddCompanyScreenState extends State<AddCompanyScreen> {
   final CompanyApiService _companyApiService = CompanyApiService();
+  late DynamicCascadeHelper _cascadeHelper;
+  Map<String, List<CascadeDependency>> _dependencyMap = {};
 
   DynamicFormModel? _formModel;
   Map<String, dynamic> _formData = {};
@@ -30,6 +33,8 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
   @override
   void initState() {
     super.initState();
+    _cascadeHelper = DynamicCascadeHelper();
+
     _loadFormData();
   }
 
@@ -56,6 +61,7 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
         });
 
         debugPrint('[ADD_COMPANY] Form structure loaded, showing UI...');
+        _initializeCascadeSystem(formModel);
 
         // 🚀 ASYNC: Dropdown'ları arka planda yükle
         _loadDropdownOptionsAsync(formModel);
@@ -69,6 +75,23 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
           _errorMessage = e.toString();
         });
       }
+    }
+  }
+
+  void _initializeCascadeSystem(DynamicFormModel formModel) {
+    try {
+      debugPrint('[ADD_COMPANY] 🔗 Initializing cascade system...');
+
+      // Dependency haritasını oluştur
+      _dependencyMap = _cascadeHelper.buildDependencyMap(formModel);
+
+      // Debug info
+      _cascadeHelper.debugDependencyMap();
+
+      debugPrint('[ADD_COMPANY] ✅ Cascade system initialized');
+      debugPrint('[ADD_COMPANY] 📊 Total parent fields: ${_dependencyMap.keys.length}');
+    } catch (e) {
+      debugPrint('[ADD_COMPANY] ❌ Cascade initialization error: $e');
     }
   }
 
@@ -176,6 +199,86 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
       _formData = formData;
     });
     debugPrint('[ADD_COMPANY] Form data updated: ${formData.keys.length} fields');
+    _handleDynamicCascade(formData);
+  }
+
+  Future<void> _handleDynamicCascade(Map<String, dynamic> formData) async {
+    if (_dependencyMap.isEmpty) {
+      debugPrint('[ADD_COMPANY] 🔍 No cascade dependencies, skipping');
+      return;
+    }
+
+    // Güvenlik kontrolleri
+    if (_isSaving) {
+      debugPrint('[ADD_COMPANY] 🚫 Save in progress - DYNAMIC CASCADE BLOCKED');
+      return;
+    }
+
+    try {
+      debugPrint('[ADD_COMPANY] 🔄 Processing dynamic cascade changes...');
+
+      // Her field change için cascade kontrol et
+      for (final entry in formData.entries) {
+        final fieldKey = entry.key;
+        final newValue = entry.value;
+
+        // Bu field'ın dependency'si var mı?
+        if (_dependencyMap.containsKey(fieldKey)) {
+          debugPrint('[ADD_COMPANY] 🎯 Cascade trigger: $fieldKey = $newValue');
+
+          await _cascadeHelper.handleFieldChange(
+            parentField: fieldKey,
+            newValue: newValue,
+            formModel: _formModel!,
+            onOptionsLoaded: (childField, options) {
+              debugPrint('[ADD_COMPANY] ✅ Options loaded for $childField: ${options.length} items');
+
+              // Child field'ın options'ını güncelle
+              final field = _formModel!.getFieldByKey(childField);
+              if (field != null && mounted) {
+                setState(() {
+                  field.options = options;
+                });
+              }
+            },
+            onFieldReset: (childField, value) {
+              debugPrint('[ADD_COMPANY] 🗑️ Field reset: $childField = $value');
+
+              // Child field'ı sıfırla
+              if (mounted) {
+                setState(() {
+                  _formData[childField] = value;
+                });
+              }
+            },
+          );
+
+          // Success message
+          if (mounted) {
+            final dependencies = _dependencyMap[fieldKey]!;
+            final childFields = dependencies.map((d) => d.childField).join(', ');
+
+            SnackbarHelper.showSuccess(
+              context: context,
+              message: '$fieldKey değişti → $childFields güncellendi',
+              duration: Duration(seconds: 1),
+            );
+          }
+        }
+      }
+
+      debugPrint('[ADD_COMPANY] ✅ Dynamic cascade processing completed');
+    } catch (e) {
+      debugPrint('[ADD_COMPANY] ❌ Dynamic cascade error: $e');
+
+      if (mounted) {
+        SnackbarHelper.showWarning(
+          context: context,
+          message: 'Bağımlı alanlar güncellenirken hata oluştu',
+          duration: Duration(seconds: 2),
+        );
+      }
+    }
   }
 
   /// 🔧 FIXED: Save/Update company method

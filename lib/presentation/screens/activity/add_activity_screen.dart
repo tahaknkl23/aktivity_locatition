@@ -1,7 +1,11 @@
+// lib/presentation/screens/activity/add_activity_screen.dart - LOCATION CONTROL ADDED
+
 import 'dart:async';
+import 'package:aktivity_location_app/core/helpers/dynamic_cascade_helper.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/helpers/snackbar_helper.dart';
+import '../../../core/helpers/location_config_helper.dart'; // ✅ YENİ IMPORT
 import '../../../core/widgets/common/loading_state_widget.dart';
 import '../../../core/widgets/common/error_state_widget.dart';
 import '../../../core/services/location_service.dart';
@@ -33,6 +37,8 @@ class AddActivityScreen extends StatefulWidget {
 
 class _AddActivityScreenState extends State<AddActivityScreen> {
   final ActivityApiService _activityApiService = ActivityApiService();
+  late DynamicCascadeHelper _cascadeHelper;
+  Map<String, List<CascadeDependency>> _dependencyMap = {};
 
   // File handlers
   Function()? _showFileOptionsHandler;
@@ -61,10 +67,27 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
   // 🔥 GLOBAL SAVE PROTECTION
   static bool _globalSaveInProgress = false;
 
+  // ✅ YENİ: Location control getter'ları
+  bool get _hasLocationFeatures {
+    return LocationConfigHelper.shouldShowLocationFeatures(
+      '/Dyn/AktiviteBranchAdd/Detail', // Form URL
+      'AktiviteBranchAdd', // Controller
+    );
+  }
+
+  bool get _hasBranchComparison {
+    return LocationConfigHelper.shouldCompareBranchLocation('AktiviteBranchAdd');
+  }
+
   @override
   void initState() {
     super.initState();
     _currentActivityId = widget.activityId; // Widget'tan initial değeri al
+
+    // ✅ YENİ: Location settings debug
+    LocationConfigHelper.debugLocationSettings('/Dyn/AktiviteBranchAdd/Detail', 'AktiviteBranchAdd', 'Detail');
+    _cascadeHelper = DynamicCascadeHelper();
+
     _loadFormData();
   }
 
@@ -100,11 +123,11 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
 
           _isLoading = false;
         });
+        _initializeCascadeSystem(formModel);
 
         // Pre-selected company için initial loading
         if (widget.preSelectedCompanyId != null && !isEditing) {
           await _loadCompanyAddresses(widget.preSelectedCompanyId!);
-          await _loadCompanyBranches(widget.preSelectedCompanyId!);
         }
 
         // Editing mode için existing files
@@ -119,6 +142,23 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
           _errorMessage = e.toString();
         });
       }
+    }
+  }
+
+  void _initializeCascadeSystem(DynamicFormModel formModel) {
+    try {
+      debugPrint('[ADD_ACTIVITY] 🔗 Initializing cascade system...');
+
+      // Dependency haritasını oluştur
+      _dependencyMap = _cascadeHelper.buildDependencyMap(formModel);
+
+      // Debug info
+      _cascadeHelper.debugDependencyMap();
+
+      debugPrint('[ADD_ACTIVITY] ✅ Cascade system initialized');
+      debugPrint('[ADD_ACTIVITY] 📊 Total parent fields: ${_dependencyMap.keys.length}');
+    } catch (e) {
+      debugPrint('[ADD_ACTIVITY] ❌ Cascade initialization error: $e');
     }
   }
 
@@ -220,6 +260,7 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     setState(() {
       _formData = formData;
     });
+    _handleDynamicCascade(formData);
 
     // 🔥 SADECE İLK COMPANY SEÇİMİNDE CASCADE YAP
     if (oldCompanyId != newCompanyId && newCompanyId != null && oldCompanyId == null) {
@@ -238,9 +279,7 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
       // Debounce cascade loading - daha uzun süre
       _debounceTimer?.cancel();
       _debounceTimer = Timer(Duration(milliseconds: 1500), () {
-        if (mounted && !_isSaveInProgress && !_globalSaveInProgress && _currentActivityId == null) {
-          _handleCascadeDropdowns(formData, oldCompanyId: oldCompanyId);
-        }
+        if (mounted && !_isSaveInProgress && !_globalSaveInProgress && _currentActivityId == null) {}
       });
     } else if (oldCompanyId != newCompanyId && oldCompanyId != null) {
       // Company değiştirildi (ikinci kez) - cascade yapma
@@ -254,199 +293,92 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     super.dispose();
   }
 
-  Future<void> _handleCascadeDropdowns(Map<String, dynamic> formData, {dynamic oldCompanyId}) async {
-    if (_formModel == null) return;
+  Future<void> _handleDynamicCascade(Map<String, dynamic> formData) async {
+    if (_dependencyMap.isEmpty) {
+      debugPrint('[ADD_ACTIVITY] 🔍 No cascade dependencies, skipping');
+      return;
+    }
 
-    // 🚨 SAVE PROGRESS KONTROLÜ - CASCADE'İ ENGELLE
+    // Güvenlik kontrolleri
     if (_isSaving || _isSaveInProgress || _globalSaveInProgress) {
-      debugPrint('[ADD_ACTIVITY] 🔒 Save in progress - CASCADE COMPLETELY BLOCKED');
+      debugPrint('[ADD_ACTIVITY] 🚫 Save in progress - DYNAMIC CASCADE BLOCKED');
       return;
     }
 
-    // 🚨 ALREADY SAVED KONTROLÜ - CASCADE'İ ENGELLE
-    if (_currentActivityId != null && _currentActivityId! > 0) {
-      debugPrint('[ADD_ACTIVITY] 🔒 Activity already saved (ID: $_currentActivityId) - CASCADE BLOCKED');
+    if (_currentActivityId != null && _currentActivityId! > 0 && !isEditing) {
+      debugPrint('[ADD_ACTIVITY] 🚫 Activity already saved - DYNAMIC CASCADE BLOCKED');
       return;
     }
 
-    // 🚨 EDIT MODE'DA CASCADE LOADING'İ TAMAMEN ENGELLE
     if (isEditing) {
-      debugPrint('[ADD_ACTIVITY] 🔒 Edit mode - CASCADE COMPLETELY DISABLED for data safety');
+      debugPrint('[ADD_ACTIVITY] 🚫 Edit mode - DYNAMIC CASCADE DISABLED for safety');
       return;
     }
 
-    debugPrint('[ADD_ACTIVITY] 🔄 SAFE CASCADE LOADING (NEW ACTIVITY):');
-    debugPrint('[ADD_ACTIVITY] 🔍 Form data keys: ${formData.keys.toList()}');
-    debugPrint('[ADD_ACTIVITY] 🔍 CompanyId value: ${formData['CompanyId']}');
-
-    // Company selected (sadece yeni aktiviteler için, sadece ilk kez)
-    if (formData.containsKey('CompanyId') && formData['CompanyId'] != null) {
-      final companyId = formData['CompanyId'] as int;
-      debugPrint('[ADD_ACTIVITY] 🏢 Company selected: $companyId');
-
-      // Sadece ilk kez company seçildiğinde cascade yap
-      if (oldCompanyId == null && companyId > 0) {
-        debugPrint('[ADD_ACTIVITY] 🚀 Loading data for FIRST TIME company selection: $companyId');
-        await _loadCompanyRelatedData(companyId, resetFields: true);
-      } else {
-        debugPrint('[ADD_ACTIVITY] ⚠️ Skipping cascade - Company change from $oldCompanyId to $companyId');
-      }
-    }
-
-    // Branch selected (yeni aktiviteler için)
-    if (!isEditing && formData.containsKey('CompanyBranchId') && formData['CompanyBranchId'] != null && formData['CompanyId'] != null) {
-      final companyId = formData['CompanyId'] as int;
-      final branchId = formData['CompanyBranchId'] as int;
-      debugPrint('[ADD_ACTIVITY] 🏢 Branch selected: $branchId');
-      await _loadBranchDetails(companyId, branchId);
-    }
-
-    // Address selected (yeni aktiviteler için)
-    if (!isEditing && formData.containsKey('AddressId') && formData['AddressId'] != null && formData['CompanyId'] != null) {
-      final companyId = formData['CompanyId'] as int;
-      final addressId = formData['AddressId'] as int;
-      debugPrint('[ADD_ACTIVITY] 🏠 Address selected: $addressId');
-      await _loadAddressDetails(companyId, addressId);
-    }
-  }
-
-  /// 🆕 Consolidated company related data loading
-  Future<void> _loadCompanyRelatedData(int companyId, {bool resetFields = false}) async {
-    debugPrint('[ADD_ACTIVITY] 🔄 Loading company related data: $companyId');
-
-    // Load all company related data in parallel
-    final futures = [
-      _loadContactsForCompany(companyId),
-      _loadCompanyBranches(companyId),
-      _loadCompanyAddresses(companyId),
-    ];
-
     try {
-      await Future.wait(futures);
+      debugPrint('[ADD_ACTIVITY] 🔄 Processing dynamic cascade changes...');
 
-      // Reset dependent fields only if requested
-      if (resetFields) {
-        setState(() {
-          _formData['ContactId'] = null;
-          _formData['CompanyBranchId'] = null;
-          _formData['AddressId'] = null;
-          selectedBranch = null;
-          _locationComparison = null;
-        });
-      }
+      // Her field change için cascade kontrol et
+      for (final entry in formData.entries) {
+        final fieldKey = entry.key;
+        final newValue = entry.value;
 
-      debugPrint('[ADD_ACTIVITY] ✅ Company related data loaded for: $companyId');
-    } catch (e) {
-      debugPrint('[ADD_ACTIVITY] ❌ Error loading company data: $e');
-    }
-  }
+        // Bu field'ın dependency'si var mı?
+        if (_dependencyMap.containsKey(fieldKey)) {
+          debugPrint('[ADD_ACTIVITY] 🎯 Cascade trigger: $fieldKey = $newValue');
 
-  Future<void> _loadContactsForCompany(int companyId) async {
-    try {
-      final contactField = _formModel!.getFieldByKey('ContactId');
-      if (contactField == null || contactField.type != FormFieldType.dropdown) return;
+          await _cascadeHelper.handleFieldChange(
+            parentField: fieldKey,
+            newValue: newValue,
+            formModel: _formModel!,
+            onOptionsLoaded: (childField, options) {
+              debugPrint('[ADD_ACTIVITY] ✅ Options loaded for $childField: ${options.length} items');
 
-      final contacts = await _activityApiService.loadContactsByCompany(companyId);
-      setState(() {
-        contactField.options = contacts;
-      });
-      debugPrint('[ADD_ACTIVITY] ✅ Loaded ${contacts.length} contacts');
-    } catch (e) {
-      debugPrint('[ADD_ACTIVITY] ❌ Failed to load contacts: $e');
-    }
-  }
+              // Child field'ın options'ını güncelle
+              final field = _formModel!.getFieldByKey(childField);
+              if (field != null && mounted) {
+                setState(() {
+                  field.options = options;
+                });
+                debugPrint('[ADD_ACTIVITY] 🔄 Field options updated for $childField');
 
-  Future<void> _loadCompanyBranches(int companyId) async {
-    try {
-      final branchField = _formModel!.getFieldByKey('CompanyBranchId');
-      debugPrint('[ADD_ACTIVITY] 🔍 Branch field check: ${branchField != null}');
+                // 🔥 ZORLA UI REFRESH - FormContentWidget'a yeniden çiz sinyali
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() {
+                      // Force UI rebuild
+                    });
+                  }
+                });
+              } else {
+                debugPrint('[ADD_ACTIVITY] ❌ Field not found: $childField');
+              }
+            },
+            onFieldReset: (childField, value) {
+              debugPrint('[ADD_ACTIVITY] 🗑️ Field reset: $childField = $value');
 
-      if (branchField == null) {
-        debugPrint('[ADD_ACTIVITY] ❌ CompanyBranchId field is NULL!');
-        return;
-      }
-
-      if (branchField.type != FormFieldType.dropdown) {
-        debugPrint('[ADD_ACTIVITY] ❌ CompanyBranchId field is not dropdown! Type: ${branchField.type}');
-        return;
-      }
-
-      debugPrint('[ADD_ACTIVITY] 🔍 Current options count: ${branchField.options?.length ?? 0}');
-
-      debugPrint('[ADD_ACTIVITY] 🏢 Loading branches for company: $companyId');
-      final branches = await _activityApiService.loadCompanyBranches(companyId: companyId);
-
-      debugPrint('[ADD_ACTIVITY] 🔍 API returned ${branches.length} branches');
-      if (branches.isNotEmpty) {
-        debugPrint('[ADD_ACTIVITY] 🔍 First branch: ${branches.first.text} (ID: ${branches.first.value})');
-      }
-
-      setState(() {
-        branchField.options = branches;
-      });
-
-      debugPrint('[ADD_ACTIVITY] 🔍 Field options after setState: ${branchField.options?.length ?? 0}');
-
-      // Success/Warning messages
-      if (branches.isNotEmpty) {
-        debugPrint('[ADD_ACTIVITY] ✅ SUCCESS: ${branches.length} branches loaded');
-        if (!isEditing) {
-          SnackbarHelper.showSuccess(
-            context: context,
-            message: '${branches.length} şube yüklendi',
-            duration: Duration(seconds: 1), // Kısa mesaj
-          );
-        }
-      } else {
-        debugPrint('[ADD_ACTIVITY] ⚠️ WARNING: No branches found for company $companyId');
-        if (!isEditing) {
-          SnackbarHelper.showWarning(
-            context: context,
-            message: 'Bu firma için şube bulunamadı',
-            duration: Duration(seconds: 2),
+              // Child field'ı sıfırla
+              if (mounted) {
+                setState(() {
+                  _formData[childField] = value;
+                });
+              }
+            },
           );
         }
       }
+
+      debugPrint('[ADD_ACTIVITY] ✅ Dynamic cascade processing completed');
     } catch (e) {
-      debugPrint('[ADD_ACTIVITY] ❌ CRITICAL ERROR in branch loading: $e');
-      SnackbarHelper.showError(
-        context: context,
-        message: 'Şubeler yüklenemedi: ${e.toString()}',
-      );
-    }
-  }
+      debugPrint('[ADD_ACTIVITY] ❌ Dynamic cascade error: $e');
 
-  Future<void> _loadBranchDetails(int companyId, int branchId) async {
-    try {
-      final branchDetails = await _activityApiService.getBranchDetails(
-        companyId: companyId,
-        branchId: branchId,
-      );
-
-      if (branchDetails != null && mounted) {
-        setState(() {
-          selectedBranch = branchDetails;
-        });
-
-        SnackbarHelper.showSuccess(
+      if (mounted) {
+        SnackbarHelper.showWarning(
           context: context,
-          message: 'Şube seçildi: ${branchDetails.name}',
-          duration: Duration(seconds: 1),
-        );
-
-        // Auto location comparison if current location exists
-        if (_currentLocation != null && branchDetails.hasCoordinates) {
-          await _compareWithSelectedBranch(branchDetails);
-        }
-      } else {
-        SnackbarHelper.showSuccess(
-          context: context,
-          message: 'Şube seçildi',
-          duration: Duration(seconds: 1),
+          message: 'Bağımlı alanlar güncellenirken hata oluştu',
+          duration: Duration(seconds: 2),
         );
       }
-    } catch (e) {
-      debugPrint('[ADD_ACTIVITY] ❌ Failed to load branch details: $e');
     }
   }
 
@@ -505,10 +437,21 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
   }
 
   // ===================
-  // LOCATION HANDLING
+  // LOCATION HANDLING - ✅ GÜNCELLENECEK
   // ===================
 
+  // ✅ GÜNCELLENECEK: Location alma metodu
   Future<void> _getCurrentLocation() async {
+    if (!_hasLocationFeatures) {
+      debugPrint('[ADD_ACTIVITY] 🚫 Location features disabled for this form');
+      SnackbarHelper.showInfo(
+        context: context,
+        message: 'Bu form için konum özelliği aktif değil',
+        duration: Duration(seconds: 2),
+      );
+      return;
+    }
+
     if (_isGettingLocation) return;
 
     setState(() => _isGettingLocation = true);
@@ -529,7 +472,12 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
           duration: Duration(seconds: 1),
         );
 
-        await _compareWithSelectedActivity();
+        // ✅ GÜNCELLENECEK: Branch comparison kontrolü
+        if (_hasBranchComparison) {
+          await _compareWithSelectedActivity();
+        } else {
+          debugPrint('[ADD_ACTIVITY] 🚫 Branch comparison disabled');
+        }
       }
     } on TimeoutException {
       if (mounted) {
@@ -552,8 +500,30 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
   }
 
+  // ✅ GÜNCELLENECEK: Compare metodu
+  // AddActivityScreen'deki _compareWithSelectedActivity() metodunun başına ekleyin:
+
   Future<void> _compareWithSelectedActivity() async {
-    if (_currentLocation == null) return;
+    // 🔍 DEBUG: Şube karşılaştırma kontrolü
+    debugPrint('🔍 [BRANCH_DEBUG] ===== BRANCH COMPARISON DEBUG =====');
+    debugPrint('🔍 [BRANCH_DEBUG] _hasBranchComparison: $_hasBranchComparison');
+    debugPrint('🔍 [BRANCH_DEBUG] _hasLocationFeatures: $_hasLocationFeatures');
+    debugPrint('🔍 [BRANCH_DEBUG] currentLocation != null: ${_currentLocation != null}');
+    debugPrint('🔍 [BRANCH_DEBUG] isEditing: $isEditing');
+    debugPrint('🔍 [BRANCH_DEBUG] _currentActivityId: $_currentActivityId');
+    debugPrint('🔍 [BRANCH_DEBUG] Form Data CompanyId: ${_formData['CompanyId']}');
+    debugPrint('🔍 [BRANCH_DEBUG] Form Data CompanyBranchId: ${_formData['CompanyBranchId']}');
+    debugPrint('🔍 [BRANCH_DEBUG] ============================================');
+
+    if (!_hasBranchComparison) {
+      debugPrint('🔍 [BRANCH_DEBUG] ❌ Branch comparison DISABLED');
+      return;
+    }
+
+    if (_currentLocation == null) {
+      debugPrint('🔍 [BRANCH_DEBUG] ❌ No current location');
+      return;
+    }
 
     setState(() => isComparingLocation = true);
 
@@ -562,8 +532,10 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
 
       // 1. Editing mode - get coordinates from API
       if (isEditing && _currentActivityId != null) {
+        debugPrint('🔍 [BRANCH_DEBUG] 🎯 EDITING MODE - Getting activity coordinates from API');
         final activityLocation = await _getActivityCoordinatesFromAPI();
         if (activityLocation != null) {
+          debugPrint('🔍 [BRANCH_DEBUG] ✅ Activity location found from API');
           final distance = LocationService.instance.calculateDistance(
             _currentLocation!.latitude,
             _currentLocation!.longitude,
@@ -587,6 +559,8 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
             );
           }
           return;
+        } else {
+          debugPrint('🔍 [BRANCH_DEBUG] ❌ Activity location NOT found from API');
         }
       }
 
@@ -594,25 +568,40 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
       final branchId = _formData['CompanyBranchId'] as int?;
       final companyId = _formData['CompanyId'] as int?;
 
+      debugPrint('🔍 [BRANCH_DEBUG] 🎯 FORM BRANCH COMPARISON');
+      debugPrint('🔍 [BRANCH_DEBUG] branchId: $branchId');
+      debugPrint('🔍 [BRANCH_DEBUG] companyId: $companyId');
+
       if (branchId != null && companyId != null) {
         try {
+          debugPrint('🔍 [BRANCH_DEBUG] 🔄 Getting branch details from API...');
           final branchDetails = await _activityApiService.getBranchDetails(
             companyId: companyId,
             branchId: branchId,
           );
 
+          debugPrint('🔍 [BRANCH_DEBUG] branchDetails: $branchDetails');
+          debugPrint('🔍 [BRANCH_DEBUG] branchDetails.hasCoordinates: ${branchDetails?.hasCoordinates}');
+
           if (branchDetails != null && branchDetails.hasCoordinates) {
+            debugPrint('🔍 [BRANCH_DEBUG] ✅ Branch has coordinates - comparing...');
             await _compareWithSelectedBranch(branchDetails);
             return;
+          } else {
+            debugPrint('🔍 [BRANCH_DEBUG] ❌ Branch has NO coordinates');
           }
         } catch (e) {
-          debugPrint('[ADD_ACTIVITY] ⚠️ Branch API error: $e');
+          debugPrint('🔍 [BRANCH_DEBUG] ❌ Branch API error: $e');
         }
+      } else {
+        debugPrint('🔍 [BRANCH_DEBUG] ❌ branchId or companyId is NULL');
       }
 
       // 3. No coordinates available
+      debugPrint('🔍 [BRANCH_DEBUG] ❌ No coordinates available for comparison');
       _showNoLocationMessage("Şube koordinat bilgisi mevcut değil");
     } catch (e) {
+      debugPrint('🔍 [BRANCH_DEBUG] ❌ General error: $e');
       _showErrorMessage("Konum kıyaslaması yapılamadı: ${e.toString()}");
     } finally {
       if (mounted) {
@@ -790,7 +779,7 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
   }
 
   // ===================
-  // FILE HANDLING
+  // FILE HANDLING - Aynı kalıyor
   // ===================
 
   void _showFileOptions() {
@@ -880,26 +869,23 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
   }
 
   // ===================
-  // SAVE & CLOSE - TAM DÜZELTİLMİŞ VERSİYON
+  // SAVE & CLOSE - Aynı kalıyor
   // ===================
 
   Future<void> _saveActivity() async {
-    // 🚨 GLOBAL SAVE LOCK KONTROLÜ
+    // Mevcut save logic aynı kalıyor...
     if (_globalSaveInProgress) {
       debugPrint('[ADD_ACTIVITY] 🚫 GLOBAL save already in progress, IGNORING!');
       return;
     }
 
-    // 🚨 DUPLICATE SAVE KONTROLÜ
     if (_isSaving || _isSaveInProgress) {
       debugPrint('[ADD_ACTIVITY] 🚫 Instance save already in progress, ignoring...');
       return;
     }
 
-    // 🚨 ALREADY SAVED KONTROLÜ - ÖNEMLİ!
     if (_currentActivityId != null && _currentActivityId! > 0 && !isEditing) {
       debugPrint('[ADD_ACTIVITY] 🚫 Activity already saved (ID: $_currentActivityId), ignoring save...');
-
       SnackbarHelper.showWarning(
         context: context,
         message: 'Aktivite zaten kaydedildi (ID: $_currentActivityId)',
@@ -909,7 +895,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
 
     try {
-      // 🔒 GLOBAL VE LOCAL LOCK
       _globalSaveInProgress = true;
 
       setState(() {
@@ -918,29 +903,21 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
       });
 
       debugPrint('[ADD_ACTIVITY] 💾 SAVE PROCESS STARTING...');
-      debugPrint('[ADD_ACTIVITY] 🔍 Is Editing: $isEditing');
-      debugPrint('[ADD_ACTIVITY] 🔍 Activity ID: $_currentActivityId');
-      debugPrint('[ADD_ACTIVITY] 🔒 GLOBAL and LOCAL save locks activated');
 
       if (!_validateRequiredFields()) {
-        return; // Early return - finally block will handle cleanup
+        return;
       }
 
       final processedData = _prepareFormDataForSave();
-
-      debugPrint('[ADD_ACTIVITY] 🚀 Making API call...');
       final result = await _activityApiService.saveActivity(
         formData: processedData,
         activityId: _currentActivityId,
       );
 
-      debugPrint('[ADD_ACTIVITY] ✅ API Save Result received');
-
       final newActivityId = result['Data']?['Id'] as int?;
       if (newActivityId != null && !isEditing) {
-        debugPrint('[ADD_ACTIVITY] 🆔 New Activity Created - ID: $newActivityId');
         setState(() {
-          _currentActivityId = newActivityId; // HEMEN SET ET
+          _currentActivityId = newActivityId;
         });
       }
 
@@ -951,8 +928,7 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
           duration: Duration(seconds: 2),
         );
 
-        // 🚨 IMMEDIATE CLOSE - Çoklu kayıt engellemek için hemen kapat
-        await Future.delayed(Duration(milliseconds: 800)); // Kısa bekle
+        await Future.delayed(Duration(milliseconds: 800));
 
         if (mounted) {
           Navigator.of(context).pop({
@@ -973,7 +949,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
         );
       }
     } finally {
-      // 🔒 CLEANUP - Her durumda çalışır
       _globalSaveInProgress = false;
 
       if (mounted) {
@@ -989,7 +964,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     final preparedData = Map<String, dynamic>.from(_formData);
     final now = DateTime.now();
 
-    // Auto-generate dates if missing
     if (preparedData['StartDate'] == null || preparedData['StartDate'].toString().isEmpty) {
       preparedData['StartDate'] =
           '${now.day.toString().padLeft(2, '0')}.${now.month.toString().padLeft(2, '0')}.${now.year} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
@@ -1001,18 +975,16 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
           '${endTime.day.toString().padLeft(2, '0')}.${endTime.month.toString().padLeft(2, '0')}.${endTime.year} ${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}';
     }
 
-    // Set status for new activities
     if (!isEditing) {
       preparedData['OpenOrClose'] = "1";
     }
 
-    // Add location data
-    if (_currentLocation != null) {
+    // ✅ YENİ: Location data sadece aktifse ekle
+    if (_hasLocationFeatures && _currentLocation != null) {
       preparedData['StartLocation'] = _currentLocation!.coordinates;
       preparedData['StartLocationText'] = _currentLocation!.address;
     }
 
-    // Clean empty values
     final cleanedData = <String, dynamic>{};
     preparedData.forEach((key, value) {
       if (value != null && value.toString().isNotEmpty && value.toString() != 'null') {
@@ -1047,6 +1019,16 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
   }
 
   Future<void> _closeActivity() async {
+    // ✅ YENİ: Close işlemi için location kontrolü
+    if (!_hasLocationFeatures) {
+      debugPrint('[ADD_ACTIVITY] 🚫 Close activity disabled - location features not active');
+      SnackbarHelper.showWarning(
+        context: context,
+        message: 'Bu form için aktivite kapatma özelliği aktif değil',
+      );
+      return;
+    }
+
     try {
       if (_currentLocation == null) {
         SnackbarHelper.showError(
@@ -1097,70 +1079,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     }
   }
 
-  /// 🎯 Field bağımlılık yönetimi - Firma değiştiğinde şube seçeneklerini güncelle
-  Future<void> onFieldDependencyChanged(String fieldKey, dynamic newValue) async {
-    debugPrint('[ADD_ACTIVITY] 🔄 Field dependency changed: $fieldKey = $newValue');
-
-    // 🚨 SAVE PROGRESS KONTROLÜ - Dependency loading'i engelle
-    if (_isSaving || _isSaveInProgress || _globalSaveInProgress) {
-      debugPrint('[ADD_ACTIVITY] 🚫 Save in progress - DEPENDENCY LOADING BLOCKED');
-      return;
-    }
-
-    // 🚨 ALREADY SAVED KONTROLÜ
-    if (_currentActivityId != null && _currentActivityId! > 0 && !isEditing) {
-      debugPrint('[ADD_ACTIVITY] 🚫 Activity already saved (ID: $_currentActivityId) - DEPENDENCY LOADING BLOCKED');
-      return;
-    }
-
-    // 🔧 SADECE FİRMA ALANI DEĞİŞTİĞİNDE ÇALIŞ - Diğer alanları ignore et
-    if (fieldKey.toLowerCase() == 'companyid' ||
-        (fieldKey.toLowerCase().contains('company') &&
-            !fieldKey.toLowerCase().contains('branch') &&
-            !fieldKey.toLowerCase().contains('sube') &&
-            !fieldKey.toLowerCase().contains('şube'))) {
-      debugPrint('[ADD_ACTIVITY] 🏢 Company dependency triggered: $newValue');
-
-      if (newValue != null) {
-        try {
-          // Loading indicator göster
-          if (mounted) {
-            SnackbarHelper.showInfo(
-              context: context,
-              message: 'Şube seçenekleri yükleniyor...',
-              duration: Duration(seconds: 1),
-            );
-          }
-
-          // Şube seçeneklerini yükle
-          await _loadCompanyBranches(newValue as int);
-
-          // Diğer bağımlı alanları da yükle
-          await Future.wait([
-            _loadContactsForCompany(newValue),
-            _loadCompanyAddresses(newValue),
-          ]);
-
-          debugPrint('[ADD_ACTIVITY] ✅ Company dependency completed for: $newValue');
-        } catch (e) {
-          debugPrint('[ADD_ACTIVITY] ❌ Company dependency error: $e');
-
-          if (mounted) {
-            SnackbarHelper.showError(
-              context: context,
-              message: 'Firma bilgileri yüklenirken hata: ${e.toString()}',
-            );
-          }
-        }
-      }
-    }
-
-    // 🔧 DİĞER ALANLAR İÇİN HİÇBİR ŞEY YAPMA
-    else {
-      debugPrint('[ADD_ACTIVITY] ⚪ Field ignored for dependency: $fieldKey');
-    }
-  }
-
   Future<bool> _showCloseActivityDialog() async {
     return await showDialog<bool>(
           context: context,
@@ -1205,10 +1123,6 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
     return 'Seçili Firma';
   }
 
-  // ===================
-  // NAVIGATION PROTECTION
-  // ===================
-
   Future<bool> _onWillPop() async {
     if (_isSaving || _isSaveInProgress || _globalSaveInProgress) {
       SnackbarHelper.showWarning(
@@ -1216,13 +1130,13 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
         message: 'Aktivite kaydediliyor, lütfen bekleyin...',
         duration: Duration(seconds: 2),
       );
-      return false; // Prevent back navigation
+      return false;
     }
-    return true; // Allow back navigation
+    return true;
   }
 
-  // ===================
-  // UI BUILD
+  // ===================s
+  // UI BUILD - ✅ GÜNCELLENECEK
   // ===================
 
   @override
@@ -1271,8 +1185,8 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
           onBack: () => Navigator.of(context).pop(),
         ),
 
-        // 🎯 Action Chips - SADECE EDİTİNG MODUNDA GÖSTER
-        if (isEditing) ...[
+        // ✅ GÜNCELLENECEK: Action Chips - LOCATION FEATURES KONTROLÜ
+        if (isEditing && _hasLocationFeatures) ...[
           ActivityActionChipsWidget(
             isEditing: isEditing,
             savedActivityId: _currentActivityId,
@@ -1287,12 +1201,40 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
           ),
         ],
 
+        // ✅ YENİ: Location features disabled message
+        if (isEditing && !_hasLocationFeatures) ...[
+          Container(
+            margin: EdgeInsets.all(16),
+            padding: EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Bu form için konum özellikleri aktif değil',
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // Form Content
         Expanded(
           child: FormContentWidget(
             selectedAddress: _selectedAddress,
-            currentLocation: _currentLocation,
-            locationComparison: _locationComparison,
+            currentLocation: _hasLocationFeatures ? _currentLocation : null,
+            locationComparison: _hasBranchComparison ? _locationComparison : null,
             attachedFiles: _attachedFiles,
             formModel: _formModel!,
             isSaving: _isSaving,
@@ -1300,10 +1242,16 @@ class _AddActivityScreenState extends State<AddActivityScreen> {
             isGettingLocation: _isGettingLocation,
             savedActivityId: _currentActivityId,
             onFormChanged: _onFormDataChanged,
-            onFieldDependencyChanged: onFieldDependencyChanged,
             onFileDeleted: _onFileDeleted,
             onFileUploaded: _onFileUploaded,
-            onRefreshLocation: _getCurrentLocation,
+            // ✅ FİX: Her zaman bir fonksiyon ver, içeride kontrol et
+            onRefreshLocation: () {
+              if (_hasLocationFeatures) {
+                _getCurrentLocation();
+              } else {
+                debugPrint('[ADD_ACTIVITY] Location refresh ignored - features disabled');
+              }
+            },
             onRegisterHandlers: (showFileOptionsHandler, refreshHandler) {
               _showFileOptionsHandler = showFileOptionsHandler;
               _refreshFilesHandler = refreshHandler;

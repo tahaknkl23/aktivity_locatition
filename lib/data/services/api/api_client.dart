@@ -1,4 +1,4 @@
-// api_client.dart - CRYPTO DEPENDENCY REMOVED
+// lib/data/services/api/api_client.dart - ENHANCED TOKEN HANDLING
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -8,12 +8,19 @@ import '../../../core/services/session_timeout_service.dart';
 
 class ApiClient {
   static const Duration _timeout = Duration(minutes: 10);
+  static DateTime? _lastTokenCheck;
+  static const Duration _tokenCheckInterval = Duration(minutes: 1);
 
-  // 🔥 REQUEST DEDUPLICATION - Aynı request'leri engelle (Simplified)
-  static final Map<String, DateTime> _recentRequests = {};
-  static const Duration _requestCooldown = Duration(seconds: 2);
+  // Global navigation context for auto-logout
+  static BuildContext? _navigatorContext;
 
-  /// ✅ GÜVENLİ HEADER OLUŞTURMA
+  // Set navigator context for auto-logout
+  static void setNavigatorContext(BuildContext context) {
+    _navigatorContext = context;
+    debugPrint('[API_CLIENT] Navigator context set for auto-logout');
+  }
+
+  /// ENHANCED HEADER GENERATION
   static Future<Map<String, String>> _getHeaders() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -25,80 +32,134 @@ class ApiClient {
       };
 
       if (token.isNotEmpty) {
+        // ENHANCED: Check token validity before using
+        final isValid = await _validateTokenExpiration();
+        if (!isValid) {
+          debugPrint('[API_CLIENT] Token expired during header generation');
+          // Clear expired token immediately
+          await _clearAuthData();
+          // Trigger logout navigation
+          _navigateToLogin();
+          throw ApiException('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+        }
+
         headers['Authorization'] = 'Bearer $token';
-        debugPrint('[API_CLIENT] Token added to headers');
+        debugPrint('[API_CLIENT] Valid token added to headers');
       } else {
-        debugPrint('[API_CLIENT] ⚠️ No token found');
+        debugPrint('[API_CLIENT] No token found - user needs to login');
+        _navigateToLogin();
+        throw ApiException('Oturum bulunamadı. Lütfen giriş yapın.');
       }
 
       return headers;
     } catch (e) {
-      debugPrint('[API_CLIENT] Header error: $e');
-      return {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      };
-    }
-  }
-
-  /// ✅ GÜVENLİ BASE URL OLUŞTURMA
-  static Future<String> _getBaseUrl() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final subdomain = prefs.getString('subdomain') ?? '';
-
-      if (subdomain.isEmpty) {
-        throw ApiException('Domain bilgisi bulunamadı. Lütfen tekrar giriş yapın.');
-      }
-
-      final baseUrl = 'https://$subdomain.veribiscrm.com';
-      debugPrint('[API_CLIENT] Base URL: $baseUrl');
-      return baseUrl;
-    } catch (e) {
-      debugPrint('[API_CLIENT] Base URL error: $e');
       if (e is ApiException) {
         rethrow;
       }
+      debugPrint('[API_CLIENT] Header generation error: $e');
+      throw ApiException('İstek hazırlanırken hata oluştu: $e');
+    }
+  }
+
+  /// ENHANCED TOKEN VALIDATION
+  static Future<bool> _validateTokenExpiration() async {
+    try {
+      final now = DateTime.now();
+
+      // Rate limiting check
+      if (_lastTokenCheck != null && now.difference(_lastTokenCheck!) < _tokenCheckInterval) {
+        return true; // Skip frequent checks
+      }
+
+      _lastTokenCheck = now;
+
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      final expirationStr = prefs.getString('token_expiration');
+
+      if (token == null || token.isEmpty) {
+        debugPrint('[API_CLIENT] No token found during validation');
+        return false;
+      }
+
+      if (expirationStr != null && expirationStr.isNotEmpty) {
+        try {
+          final expiration = DateTime.parse(expirationStr);
+
+          if (now.isAfter(expiration)) {
+            debugPrint('[API_CLIENT] Token expired: $expiration vs $now');
+            return false;
+          }
+
+          // Warning for tokens expiring soon (5 minutes)
+          final remaining = expiration.difference(now);
+          if (remaining.inMinutes <= 5) {
+            debugPrint('[API_CLIENT] Token expiring soon: ${remaining.inMinutes}m');
+          }
+
+          return true;
+        } catch (e) {
+          debugPrint('[API_CLIENT] Token expiration parse error: $e');
+          return false;
+        }
+      }
+
+      // No expiration data - token might be valid but risky
+      debugPrint('[API_CLIENT] No expiration data found');
+      return true;
+    } catch (e) {
+      debugPrint('[API_CLIENT] Token validation error: $e');
+      return false;
+    }
+  }
+
+  /// BASE URL GENERATION
+  static Future<String> _getBaseUrl() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Try stored base URL first
+      String? baseUrl = prefs.getString('base_url');
+      if (baseUrl != null && baseUrl.isNotEmpty) {
+        debugPrint('[API_CLIENT] Using stored base URL: $baseUrl');
+        return baseUrl;
+      }
+
+      // Fallback to subdomain
+      final subdomain = prefs.getString('subdomain') ?? '';
+      if (subdomain.isEmpty) {
+        throw ApiException('Domain bilgisi bulunamadı. Lütfen giriş ekranından tekrar başlayın.');
+      }
+
+      baseUrl = _buildBaseUrlFromSubdomain(subdomain);
+      debugPrint('[API_CLIENT] Built base URL from subdomain: $baseUrl');
+      return baseUrl;
+    } catch (e) {
+      debugPrint('[API_CLIENT] Base URL error: $e');
+      if (e is ApiException) rethrow;
       throw ApiException('API URL oluşturulamadı: $e');
     }
   }
 
-  /// 🔥 SIMPLE REQUEST HASH - No crypto dependency
-  static String _generateSimpleHash(String url, Map<String, dynamic>? body) {
-    final content = '$url${jsonEncode(body ?? {})}';
-    // Simple hash using string hashCode
-    return content.hashCode.toString();
-  }
-
-  /// 🔥 DUPLICATE REQUEST KONTROLÜ
-  static bool _isDuplicateRequest(String requestHash) {
-    final now = DateTime.now();
-
-    // Eski request'leri temizle
-    _recentRequests.removeWhere((hash, time) => now.difference(time) > _requestCooldown);
-
-    if (_recentRequests.containsKey(requestHash)) {
-      final lastRequest = _recentRequests[requestHash]!;
-      if (now.difference(lastRequest) < _requestCooldown) {
-        debugPrint('[API_CLIENT] 🚫 DUPLICATE REQUEST BLOCKED: $requestHash');
-        return true;
-      }
+  static String _buildBaseUrlFromSubdomain(String subdomain) {
+    if (subdomain.startsWith('http://') || subdomain.startsWith('https://')) {
+      return subdomain;
     }
-
-    _recentRequests[requestHash] = now;
-    return false;
+    if (subdomain.contains(':') && !subdomain.contains('://')) {
+      return 'http://$subdomain';
+    }
+    if (subdomain.contains('.') && !subdomain.contains('veribiscrm.com')) {
+      return 'https://$subdomain';
+    }
+    if (subdomain.contains('.veribiscrm.com')) {
+      return 'https://$subdomain';
+    }
+    return 'https://$subdomain.veribiscrm.com';
   }
 
-  /// ✅ GÜVENLİ POST REQUEST - DUPLICATE PROTECTION
+  /// ENHANCED POST REQUEST
   static Future<http.Response> post(String endpoint, {Map<String, dynamic>? body}) async {
     try {
-      // 🔥 DUPLICATE REQUEST CHECK
-      final requestHash = _generateSimpleHash(endpoint, body);
-      if (_isDuplicateRequest(requestHash)) {
-        throw ApiException('Bu işlem çok sık tekrarlandı. Lütfen bekleyin.');
-      }
-
-      // 🎯 SESSION REFRESH - Her API call'da
       SessionTimeoutService.instance.recordActivity();
 
       final baseUrl = await _getBaseUrl();
@@ -118,12 +179,12 @@ class ApiClient {
 
       debugPrint("[API] Status: ${response.statusCode}");
 
-      // Response body'yi güvenli yazdır (çok uzunsa kısalt)
+      // Log response preview
       final responsePreview = response.body.length > 500 ? '${response.body.substring(0, 500)}...' : response.body;
       debugPrint("[API] Response preview: $responsePreview");
 
-      // Status code kontrolü
-      await _checkStatusCode(response);
+      // ENHANCED status handling
+      await _handleResponseStatus(response);
 
       return response;
     } on SocketException {
@@ -131,23 +192,16 @@ class ApiClient {
     } on TimeoutException {
       throw ApiException('İstek zaman aşımına uğradı. Lütfen tekrar deneyin.');
     } on ApiException {
-      rethrow; // ApiException'ları direkt fırlat
+      rethrow;
     } catch (e) {
       debugPrint("[API] POST Error: $e");
       throw ApiException('İstek başarısız oldu: ${e.toString()}');
     }
   }
 
-  /// ✅ GÜVENLİ GET REQUEST - DUPLICATE PROTECTION
+  /// ENHANCED GET REQUEST
   static Future<http.Response> get(String endpoint) async {
     try {
-      // 🔥 DUPLICATE REQUEST CHECK
-      final requestHash = _generateSimpleHash(endpoint, null);
-      if (_isDuplicateRequest(requestHash)) {
-        throw ApiException('Bu işlem çok sık tekrarlandı. Lütfen bekleyin.');
-      }
-
-      // 🎯 SESSION REFRESH - Her API call'da
       SessionTimeoutService.instance.recordActivity();
 
       final baseUrl = await _getBaseUrl();
@@ -163,8 +217,7 @@ class ApiClient {
       final responsePreview = response.body.length > 500 ? '${response.body.substring(0, 500)}...' : response.body;
       debugPrint("[API] Response preview: $responsePreview");
 
-      // Status code kontrolü
-      await _checkStatusCode(response);
+      await _handleResponseStatus(response);
 
       return response;
     } on SocketException {
@@ -179,112 +232,252 @@ class ApiClient {
     }
   }
 
-  /// ✅ STATUS CODE KONTROLÜ
-  static Future<void> _checkStatusCode(http.Response response) async {
+  /// ENHANCED RESPONSE STATUS HANDLING
+  static Future<void> _handleResponseStatus(http.Response response) async {
     switch (response.statusCode) {
       case 200:
       case 201:
-        // Başarılı - session'ı yenile
         SessionTimeoutService.instance.recordActivity();
         break;
+
       case 401:
-        await _clearAuthData();
+        debugPrint('[API_CLIENT] 401 Unauthorized - Handling token expiration');
+        await _handleTokenExpiration();
         throw ApiException('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+
       case 403:
         throw ApiException('Bu işlem için yetkiniz bulunmuyor.');
+
       case 404:
         throw ApiException('İstenen kaynak bulunamadı.');
-      case 405:
-        throw ApiException('Bu işlem desteklenmiyor.');
-      case 409:
-        throw ApiException('Bu kayıt başka bir işlemde kullanılıyor.');
-      case 422:
-        throw ApiException('Gönderilen veriler hatalı. Lütfen kontrol edin.');
+
+      case 408:
+        throw ApiException('İstek zaman aşımına uğradı. Lütfen tekrar deneyin.');
+
       case 429:
         throw ApiException('Çok fazla istek gönderildi. Lütfen bekleyin.');
+
       case 500:
         throw ApiException('Sunucu hatası. Lütfen daha sonra tekrar deneyin.');
+
       case 502:
       case 503:
+      case 504:
         throw ApiException('Servis geçici olarak kullanılamıyor. Lütfen tekrar deneyin.');
+
       default:
-        throw ApiException('Bilinmeyen hata (${response.statusCode}). Lütfen tekrar deneyin.');
+        String errorDetail = '';
+        try {
+          final errorBody = jsonDecode(response.body);
+          errorDetail = errorBody['message'] ?? errorBody['error'] ?? '';
+        } catch (e) {
+          // Ignore parsing error
+        }
+
+        final errorMessage = errorDetail.isNotEmpty
+            ? 'Hata (${response.statusCode}): $errorDetail'
+            : 'Bilinmeyen hata (${response.statusCode}). Lütfen tekrar deneyin.';
+
+        throw ApiException(errorMessage);
     }
   }
 
-  /// ✅ AUTH VERİLERİNİ TEMİZLE
+  /// ENHANCED TOKEN EXPIRATION HANDLER
+  static Future<void> _handleTokenExpiration() async {
+    try {
+      debugPrint('[API_CLIENT] Handling token expiration - clearing all auth data');
+
+      // Clear all auth data
+      await _clearAuthData();
+
+      // Stop session timeout service
+      SessionTimeoutService.instance.stop();
+
+      // Navigate to login
+      _navigateToLogin();
+    } catch (e) {
+      debugPrint('[API_CLIENT] Error handling token expiration: $e');
+    }
+  }
+
+  /// CLEAR AUTH DATA
   static Future<void> _clearAuthData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('token');
+      await prefs.remove('token_expiration');
       await prefs.remove('user_id');
       await prefs.remove('user_name');
       await prefs.remove('user_email');
-      debugPrint('[API_CLIENT] Auth data cleared due to 401');
+      await prefs.remove('full_name');
+      await prefs.remove('picture_url');
+
+      _lastTokenCheck = null;
+      debugPrint('[API_CLIENT] All auth data cleared');
     } catch (e) {
       debugPrint('[API_CLIENT] Error clearing auth data: $e');
     }
   }
 
-  /// ✅ TOKEN KONTROLÜ
+  /// NAVIGATE TO LOGIN
+  static void _navigateToLogin() {
+    if (_navigatorContext != null) {
+      try {
+        debugPrint('[API_CLIENT] Navigating to login screen');
+
+        // Navigate and clear all previous routes
+        Navigator.of(_navigatorContext!).pushNamedAndRemoveUntil(
+          '/login', // Adjust this route name to match your login route
+          (route) => false,
+        );
+      } catch (e) {
+        debugPrint('[API_CLIENT] Navigation error: $e');
+      }
+    } else {
+      debugPrint('[API_CLIENT] Cannot navigate - no navigator context set');
+    }
+  }
+
+  /// TOKEN VALIDATION (PUBLIC)
   static Future<bool> isTokenValid() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
-      return token != null && token.isNotEmpty;
+      final expirationStr = prefs.getString('token_expiration');
+
+      if (token == null || token.isEmpty) {
+        return false;
+      }
+
+      if (expirationStr != null && expirationStr.isNotEmpty) {
+        try {
+          final expiration = DateTime.parse(expirationStr);
+          final now = DateTime.now();
+
+          if (now.isAfter(expiration)) {
+            debugPrint('[API_CLIENT] Token expired during public validation');
+            await _clearAuthData();
+            return false;
+          }
+        } catch (e) {
+          debugPrint('[API_CLIENT] Token expiration parse error: $e');
+          return false;
+        }
+      }
+
+      return true;
     } catch (e) {
-      debugPrint('[API_CLIENT] Token check error: $e');
+      debugPrint('[API_CLIENT] Token validation error: $e');
       return false;
     }
   }
 
-  /// ✅ SUBDOMAIN KONTROLÜ
-  static Future<bool> isSubdomainValid() async {
+  /// DOMAIN VALIDATION
+  static Future<bool> isDomainValid() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final baseUrl = prefs.getString('base_url');
       final subdomain = prefs.getString('subdomain');
-      return subdomain != null && subdomain.isNotEmpty;
+
+      return (baseUrl != null && baseUrl.isNotEmpty) || (subdomain != null && subdomain.isNotEmpty);
     } catch (e) {
-      debugPrint('[API_CLIENT] Subdomain check error: $e');
+      debugPrint('[API_CLIENT] Domain validation error: $e');
       return false;
     }
   }
 
-  /// 🔧 REQUEST CACHE'İ TEMİZLE (debugging için)
-  static void clearRequestCache() {
-    _recentRequests.clear();
-    debugPrint('[API_CLIENT] Request cache cleared');
+  /// TOKEN INFO
+  static Future<TokenExpirationInfo?> getTokenExpirationInfo() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final expirationStr = prefs.getString('token_expiration');
+
+      if (expirationStr == null || expirationStr.isEmpty) return null;
+
+      final expiration = DateTime.parse(expirationStr);
+      final now = DateTime.now();
+      final remaining = expiration.difference(now);
+
+      return TokenExpirationInfo(
+        expirationTime: expiration,
+        remainingTime: remaining,
+        isExpired: remaining.isNegative,
+        isExpiringSoon: remaining.inMinutes < 5,
+      );
+    } catch (e) {
+      debugPrint('[API_CLIENT] Get expiration info error: $e');
+      return null;
+    }
   }
 
-  /// 📊 CACHE İSTATİSTİKLERİ
-  static Map<String, dynamic> getCacheStats() {
-    final now = DateTime.now();
-    final activeRequests = _recentRequests.values.where((time) => now.difference(time) < _requestCooldown).length;
-
-    return {
-      'total_cached': _recentRequests.length,
-      'active_blocks': activeRequests,
-      'cooldown_seconds': _requestCooldown.inSeconds,
-    };
+  /// FORCE LOGOUT
+  static Future<void> forceLogout() async {
+    try {
+      debugPrint('[API_CLIENT] Force logout initiated');
+      await _handleTokenExpiration();
+    } catch (e) {
+      debugPrint('[API_CLIENT] Force logout error: $e');
+    }
   }
 }
 
-/// ✅ ÖZEL API EXCEPTION SINIFI
+/// API EXCEPTION
 class ApiException implements Exception {
   final String message;
+  final int? statusCode;
+  final Map<String, dynamic>? details;
 
-  ApiException(this.message);
+  ApiException(this.message, {this.statusCode, this.details});
+
+  @override
+  String toString() => message;
+
+  bool get isNetworkError => message.contains('bağlantı') || message.contains('internet') || message.contains('timeout');
+
+  bool get isAuthError => statusCode == 401 || message.contains('oturum') || message.contains('giriş');
+
+  bool get isServerError => statusCode != null && statusCode! >= 500;
+}
+
+/// TIMEOUT EXCEPTION
+class TimeoutException implements Exception {
+  final String message;
+  final Duration duration;
+
+  TimeoutException(this.message, this.duration);
 
   @override
   String toString() => message;
 }
 
-/// ✅ TIMEOUT EXCEPTION
-class TimeoutException implements Exception {
-  final String message;
+/// TOKEN EXPIRATION INFO
+class TokenExpirationInfo {
+  final DateTime expirationTime;
+  final Duration remainingTime;
+  final bool isExpired;
+  final bool isExpiringSoon;
 
-  TimeoutException(this.message, Duration duration);
+  TokenExpirationInfo({
+    required this.expirationTime,
+    required this.remainingTime,
+    required this.isExpired,
+    required this.isExpiringSoon,
+  });
 
-  @override
-  String toString() => message;
+  String get formattedRemainingTime {
+    if (isExpired) return 'Süresi dolmuş';
+
+    final minutes = remainingTime.inMinutes;
+    final seconds = remainingTime.inSeconds % 60;
+
+    if (minutes > 60) {
+      final hours = minutes ~/ 60;
+      final remainingMinutes = minutes % 60;
+      return '${hours}s ${remainingMinutes}d';
+    } else if (minutes > 0) {
+      return '${minutes}d ${seconds}s';
+    } else {
+      return '${seconds}s';
+    }
+  }
 }

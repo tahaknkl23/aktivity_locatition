@@ -1,6 +1,3 @@
-// lib/presentation/screens/common/generic_dynamic_list_screen.dart
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_sizes.dart';
@@ -30,9 +27,7 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
   List<Map<String, dynamic>> _listData = [];
   bool _isLoading = true;
   String? _errorMessage;
-  int currentPage = 1;
-  final int pageSize = 10000;
-  bool hasMoreData = true;
+  int _totalCount = 0;
 
   final ScrollController _scrollController = ScrollController();
 
@@ -40,7 +35,6 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
   void initState() {
     super.initState();
     _loadListData();
-    //_scrollController.addListener(_onScroll);
   }
 
   @override
@@ -51,136 +45,89 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
 
   Future<void> _loadListData({bool isRefresh = false}) async {
     setState(() {
-      currentPage = 1;
       _listData.clear();
-      hasMoreData = false;
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      debugPrint('[GENERIC_LIST] 🔍 Starting data load...');
+      debugPrint('[GENERIC_LIST] 🔍 Loading all data...');
       debugPrint('[GENERIC_LIST] 📋 Controller: ${widget.controller}');
       debugPrint('[GENERIC_LIST] 🔗 URL: ${widget.url}');
 
-      // İlk 3 sayfayı test et ve veri karşılaştır
-      List<dynamic> allData = [];
-      Set<String> uniqueIds = {};
+      // ✅ SINGLE REQUEST - Load all data at once
+      final response = await _apiService.getFormListData(
+        controller: widget.controller,
+        params: _extractParams(),
+        formPath: widget.url,
+        page: 1,
+        pageSize: 999999, // Very large number to get all data
+      );
 
-      for (int testPage = 1; testPage <= 3; testPage++) {
-        debugPrint('[GENERIC_LIST] 🧪 TEST Page $testPage loading...');
+      final allData = _extractDataFromResponse(response);
+      final total = _extractTotalFromResponse(response);
 
-        final response = await _apiService.getFormListData(
-          controller: widget.controller,
-          params: _extractParams(),
-          formPath: widget.url,
-          page: testPage,
-          pageSize: 100,
-        );
+      debugPrint('[GENERIC_LIST] ✅ ALL DATA LOADED: ${allData.length} items, total: $total');
 
-        final pageData = _extractDataFromResponse(response);
-        debugPrint('[GENERIC_LIST] 📊 TEST Page $testPage: ${pageData.length} items');
-
-        // İlk item'ın ID'sini logla
-        if (pageData.isNotEmpty) {
-          final firstItem = pageData[0];
-          final itemId = firstItem['Id'] ?? firstItem['id'] ?? firstItem['ID'] ?? 'unknown';
-          debugPrint('[GENERIC_LIST] 🔍 TEST Page $testPage first item ID: $itemId');
-
-          // Unique ID kontrolü
-          for (final item in pageData) {
-            final id = item['Id'] ?? item['id'] ?? item['ID'] ?? 'unknown_${DateTime.now().millisecondsSinceEpoch}';
-            uniqueIds.add(id.toString());
-          }
-
-          allData.addAll(pageData);
-        } else {
-          debugPrint('[GENERIC_LIST] ❌ TEST Page $testPage: No data received');
-          break;
-        }
+      if (mounted) {
+        setState(() {
+          _listData = allData.cast<Map<String, dynamic>>();
+          _totalCount = total;
+          _isLoading = false;
+        });
       }
-
-      debugPrint('[GENERIC_LIST] 📊 TEST RESULT:');
-      debugPrint('[GENERIC_LIST] 📊 Total items loaded: ${allData.length}');
-      debugPrint('[GENERIC_LIST] 📊 Unique IDs found: ${uniqueIds.length}');
-
-      if (allData.length > uniqueIds.length) {
-        debugPrint('[GENERIC_LIST] ❌ DUPLICATE DATA DETECTED!');
-        debugPrint('[GENERIC_LIST] ❌ Server returning same data for different pages');
-        debugPrint('[GENERIC_LIST] 🔧 Pagination not working properly');
-      } else {
-        debugPrint('[GENERIC_LIST] ✅ No duplicates found, pagination working');
-      }
-
-      // Sadece unique verileri kullan
-      final uniqueData = <Map<String, dynamic>>[];
-      final seenIds = <String>{};
-
-      for (final item in allData) {
-        final id = item['Id'] ?? item['id'] ?? item['ID'] ?? 'unknown_${DateTime.now().millisecondsSinceEpoch}';
-        if (!seenIds.contains(id.toString())) {
-          seenIds.add(id.toString());
-          uniqueData.add(item as Map<String, dynamic>);
-        }
-      }
-
-      setState(() {
-        _listData = uniqueData;
-        hasMoreData = false;
-        _isLoading = false;
-      });
-
-      debugPrint('[GENERIC_LIST] ✅ FINAL RESULT: ${_listData.length} unique items loaded');
-    } catch (e, stackTrace) {
+    } catch (e) {
       debugPrint('[GENERIC_LIST] ❌ Error: $e');
 
-      setState(() {
-        _errorMessage = 'Liste yüklenirken hata oluştu: $e';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Liste yüklenirken hata oluştu: $e';
+          _isLoading = false;
+        });
+      }
     }
   }
 
-
-// Gelişmiş response parsing
+  // Extract data from response - Support both new and old formats
   List<dynamic> _extractDataFromResponse(Map<String, dynamic> response) {
     debugPrint('[GENERIC_LIST] 🔍 Parsing response...');
     debugPrint('[GENERIC_LIST] 📦 Response structure: ${response.keys.toList()}');
 
-    List<dynamic> data = [];
-
-    // Farklı response formatlarını dene
-    if (response['DataSourceResult'] != null) {
-      final dsResult = response['DataSourceResult'];
-      debugPrint('[GENERIC_LIST] 📦 DataSourceResult keys: ${dsResult.keys.toList()}');
-
-      if (dsResult['Data'] != null && dsResult['Data'] is List) {
-        data = dsResult['Data'] as List<dynamic>;
-        debugPrint('[GENERIC_LIST] ✅ Found data in DataSourceResult.Data: ${data.length}');
-      }
-
-      // Total count varsa göster
-      if (dsResult['Total'] != null) {
-        debugPrint('[GENERIC_LIST] 📊 Server reports total: ${dsResult['Total']} items');
-      }
-    } else if (response['Data'] != null && response['Data'] is List) {
-      data = response['Data'] as List<dynamic>;
+    // ✅ NEW FORMAT: Direct "Data" array (from GetFormListData)
+    if (response['Data'] != null && response['Data'] is List) {
+      final data = response['Data'] as List<dynamic>;
       debugPrint('[GENERIC_LIST] ✅ Found data in Data: ${data.length}');
-    } else if (response['data'] != null && response['data'] is List) {
-      data = response['data'] as List<dynamic>;
-      debugPrint('[GENERIC_LIST] ✅ Found data in data: ${data.length}');
-    } else if (response['result'] != null && response['result'] is List) {
-      data = response['result'] as List<dynamic>;
-      debugPrint('[GENERIC_LIST] ✅ Found data in result: ${data.length}');
-    } else if (response['items'] != null && response['items'] is List) {
-      data = response['items'] as List<dynamic>;
-      debugPrint('[GENERIC_LIST] ✅ Found data in items: ${data.length}');
-    } else {
-      debugPrint('[GENERIC_LIST] ❌ No recognizable data format found');
-      debugPrint('[GENERIC_LIST] 🔍 Full response: $response');
+      return data;
     }
 
-    return data;
+    // ✅ OLD FORMAT: DataSourceResult.Data (from GetFormListDataType)
+    if (response['DataSourceResult'] != null) {
+      final dsResult = response['DataSourceResult'];
+      if (dsResult['Data'] != null && dsResult['Data'] is List) {
+        final data = dsResult['Data'] as List<dynamic>;
+        debugPrint('[GENERIC_LIST] ✅ Found data in DataSourceResult.Data: ${data.length}');
+        return data;
+      }
+    }
+
+    debugPrint('[GENERIC_LIST] ❌ No recognizable data format found');
+    return [];
+  }
+
+  // Extract total count from response
+  int _extractTotalFromResponse(Map<String, dynamic> response) {
+    // NEW FORMAT: Direct "Total"
+    if (response['Total'] != null) {
+      return response['Total'] as int? ?? 0;
+    }
+
+    // OLD FORMAT: DataSourceResult.Total
+    if (response['DataSourceResult'] != null && response['DataSourceResult']['Total'] != null) {
+      return response['DataSourceResult']['Total'] as int? ?? 0;
+    }
+
+    // Fallback: Count data array
+    return _extractDataFromResponse(response).length;
   }
 
   String _extractParams() {
@@ -246,6 +193,28 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          // Stats in AppBar
+          if (_totalCount > 0 && !_isLoading)
+            Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Center(
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    '${_listData.length} / $_totalCount',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           IconButton(
             onPressed: () => _loadListData(isRefresh: true),
             icon: _isLoading
@@ -326,7 +295,7 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
             Container(
               padding: EdgeInsets.all(size.cardPadding),
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
+                color: Colors.red.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(size.cardBorderRadius),
               ),
               child: Icon(
@@ -373,7 +342,7 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
           Container(
             padding: EdgeInsets.all(size.cardPadding),
             decoration: BoxDecoration(
-              color: Colors.blue.withOpacity(0.1),
+              color: Colors.blue.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(size.cardBorderRadius),
             ),
             child: Icon(
@@ -439,7 +408,7 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppColors.border.withOpacity(0.3),
+          color: AppColors.border.withValues(alpha: 0.3),
           width: 1,
         ),
         boxShadow: [
@@ -459,7 +428,7 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
               gradient: LinearGradient(
                 colors: [
                   _getControllerColor(),
-                  _getControllerColor().withOpacity(0.7),
+                  _getControllerColor().withValues(alpha: 0.7),
                 ],
               ),
               borderRadius: BorderRadius.only(
@@ -493,7 +462,7 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
                             gradient: LinearGradient(
                               colors: [
                                 _getControllerColor(),
-                                _getControllerColor().withOpacity(0.7),
+                                _getControllerColor().withValues(alpha: 0.7),
                               ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
@@ -590,7 +559,7 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
                       decoration: BoxDecoration(
                         border: Border(
                           top: BorderSide(
-                            color: AppColors.divider.withOpacity(0.5),
+                            color: AppColors.divider.withValues(alpha: 0.5),
                             width: 1,
                           ),
                         ),
@@ -602,7 +571,7 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
                             Container(
                               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: AppColors.info.withOpacity(0.1),
+                                color: AppColors.info.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Row(
@@ -633,7 +602,7 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
                             Container(
                               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.1),
+                                color: AppColors.primary.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
@@ -691,6 +660,7 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
   }
 
   // Helper method to get 2x2 grid info
+  // Helper method to get 2x2 grid info - UPDATED FOR DOCUMENTS
   List<Map<String, String?>> _getGridInfo(Map<String, dynamic> item) {
     final List<Map<String, String?>> gridInfo = [
       {'label': null, 'value': null},
@@ -699,35 +669,69 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
       {'label': null, 'value': null},
     ];
 
-    // Priority order for fields
+    // Document-specific field mappings
+    if (widget.controller.toLowerCase().contains('document')) {
+      // DOCUMENT SPECIFIC LAYOUT
+      gridInfo[0] = {
+        'label': 'Firma',
+        'value': _formatFieldValue(item['Firma']),
+      };
+
+      gridInfo[1] = {
+        'label': 'Seri No',
+        'value': _formatFieldValue(item['Seri']),
+      };
+
+      gridInfo[2] = {
+        'label': 'Son Geçerlilik',
+        'value': _formatDocumentDate(item['ExpirationDate']),
+      };
+
+      gridInfo[3] = {
+        'label': 'Gönderim',
+        'value': item['Gonderi'] != null ? 'Gönderildi' : 'Beklemede',
+      };
+
+      return gridInfo;
+    }
+
+    // Generic field mappings (existing code)
     final fieldMappings = {
       // Top Left - Company/Firma
       0: [
+        {'key': 'Firma', 'label': 'Firma'},
         {'key': 'CompanyName', 'label': 'Firma'},
         {'key': 'Company', 'label': 'Firma'},
-        {'key': 'Firma', 'label': 'Firma'},
       ],
       // Top Right - Person/User
       1: [
+        {'key': 'Seri', 'label': 'Seri No'},
         {'key': 'ContactName', 'label': 'Kişi'},
         {'key': 'UserName', 'label': 'Kullanıcı'},
         {'key': 'AssignedUser', 'label': 'Atanan'},
         {'key': 'Kişi', 'label': 'Kişi'},
+        {'key': 'AdiSoyadi', 'label': 'Ad Soyad'},
       ],
       // Bottom Left - Subject/Amount
       2: [
+        {'key': 'ExpirationDate', 'label': 'Son Geçerlilik'},
         {'key': 'Subject', 'label': 'Konu'},
         {'key': 'Amount', 'label': 'Tutar'},
         {'key': 'Description', 'label': 'Açıklama'},
         {'key': 'Konu', 'label': 'Konu'},
         {'key': 'Açıklama', 'label': 'Açıklama'},
+        {'key': 'Telefon', 'label': 'Telefon'},
       ],
       // Bottom Right - Status
       3: [
+        {'key': 'Gonderi', 'label': 'Durum'},
         {'key': 'Status', 'label': 'Durum'},
         {'key': 'State', 'label': 'Durum'},
         {'key': 'ProcessStep', 'label': 'Adım'},
         {'key': 'IsActive', 'label': 'Durum'},
+        {'key': 'Mail', 'label': 'E-posta'},
+        {'key': 'Unvani', 'label': 'Ünvan'},
+        {'key': 'Departman', 'label': 'Departman'},
       ],
     };
 
@@ -786,6 +790,48 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
     return gridInfo;
   }
 
+  /// Format document date specifically
+  String _formatDocumentDate(dynamic dateValue) {
+    if (dateValue == null) return '-';
+
+    try {
+      final dateStr = dateValue.toString();
+      if (dateStr.contains(' ')) {
+        // "20.06.2025 00:00:00" format
+        return dateStr.split(' ')[0]; // Just take date part
+      }
+      return dateStr;
+    } catch (e) {
+      return dateValue.toString();
+    }
+  }
+
+  String _getItemTitle(Map<String, dynamic> item) {
+    // Document-specific title logic
+    if (widget.controller.toLowerCase().contains('document')) {
+      final title = item['Title'] as String?;
+      if (title != null && title.isNotEmpty) {
+        return title;
+      }
+    }
+
+    // Generic title fields
+    const titleFields = ['Title', 'Name', 'Subject', 'Description', 'Adi', 'Baslik', 'Konu', 'AdiSoyadi'];
+
+    for (final field in titleFields) {
+      if (item.containsKey(field) && item[field] != null) {
+        final value = item[field].toString();
+        if (value.isNotEmpty && value != 'null') {
+          return value;
+        }
+      }
+    }
+
+    // ID göster
+    final id = item['Id'] ?? item['id'] ?? item['ID'] ?? 'Unknown';
+    return '${widget.controller} #$id';
+  }
+
   // Helper methods for better UI
   Color _getControllerColor() {
     switch (widget.controller.toLowerCase()) {
@@ -838,6 +884,11 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
       'Phone': 'Telefon',
       'Email': 'Email',
       'Address': 'Adres',
+      'AdiSoyadi': 'Ad Soyad',
+      'Telefon': 'Telefon',
+      'Mail': 'E-posta',
+      'Unvani': 'Ünvan',
+      'Departman': 'Departman',
     };
 
     return fieldTranslations[key] ?? key;
@@ -847,13 +898,40 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
     if (value == null) return '-';
     if (value is String && value.isEmpty) return '-';
 
-    // Tarih formatı kontrolü
-    if (value is String && value.contains('T')) {
+    // Tarih formatı kontrolü - SADECE TARİH GÖSTER
+    if (value is String && (value.contains('T') || value.contains(' '))) {
       try {
-        final date = DateTime.parse(value);
-        return '${date.day}.${date.month}.${date.year}';
+        DateTime date;
+        if (value.contains('T')) {
+          // ISO format: 2025-08-29T10:40:00
+          date = DateTime.parse(value);
+        } else if (value.contains(' ')) {
+          // Turkish format: 29.08.2025 10:40:00
+          final parts = value.split(' ');
+          if (parts.isNotEmpty) {
+            final datePart = parts[0]; // Sadece tarih kısmını al
+            final dateParts = datePart.split('.');
+            if (dateParts.length == 3) {
+              date = DateTime(
+                int.parse(dateParts[2]), // yıl
+                int.parse(dateParts[1]), // ay
+                int.parse(dateParts[0]), // gün
+              );
+            } else {
+              return value.toString();
+            }
+          } else {
+            return value.toString();
+          }
+        } else {
+          return value.toString();
+        }
+
+        // Sadece tarih döndür - saat yok
+        return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
       } catch (e) {
-        // Ignore parsing error
+        // Parse edilemezse orijinal değeri döndür
+        return value.toString();
       }
     }
 
@@ -872,13 +950,16 @@ class _GenericDynamicListScreenState extends State<GenericDynamicListScreen> {
     return null;
   }
 
-  String _getItemTitle(Map<String, dynamic> item) {
+  String getItemTitle(Map<String, dynamic> item) {
     // Başlık için uygun field'ı bul
-    const titleFields = ['Name', 'Title', 'Subject', 'Description', 'Adi', 'Baslik', 'Konu'];
+    const titleFields = ['Name', 'Title', 'Subject', 'Description', 'Adi', 'Baslik', 'Konu', 'AdiSoyadi'];
 
     for (final field in titleFields) {
       if (item.containsKey(field) && item[field] != null) {
-        return item[field].toString();
+        final value = item[field].toString();
+        if (value.isNotEmpty && value != 'null') {
+          return value;
+        }
       }
     }
 
